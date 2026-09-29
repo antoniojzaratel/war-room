@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>War Room · La Dinastía</title>
+<meta name="description" content="Live projections, rankings, trades, forecasts, a sportsbook and a weekly roast newspaper for a Sleeper fantasy league.">
+<meta name="theme-color" content="#1B4D33">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Cellipse cx=%2232%22 cy=%2232%22 rx=%2228%22 ry=%2217%22 fill=%22%239E6300%22 transform=%22rotate(-35 32 32)%22/%3E%3Cpath d=%22M22 40l20-16M27 33l4 4M31 29l4 4M35 25l4 4%22 stroke=%22%23fff%22 stroke-width=%223%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <h1 id="lgName">War Room</h1>
+      <span class="meta" id="lgMeta">Connecting to Sleeper…</span>
+    </div>
+    <details class="setup-wrap"><summary>Change league</summary>
+    <form class="setup" id="setup" onsubmit="return false">
+      <label>League ID <input id="inLeague" inputmode="numeric" autocomplete="off"></label>
+      <label>Your Sleeper username <input id="inUser" autocomplete="off"></label>
+      <button id="btnLoad" type="submit">Load league</button>
+    </form></details>
+    <nav class="tabs" role="tablist" id="tabs"></nav>
+  </div>
+</header>
+<main id="main"><div class="status">Loading your league from Sleeper…</div></main>
+<footer id="foot"></footer>
+
+<script src="js/config.js"></script>
+<script src="js/core.js"></script>
+<script src="js/modules/live.js"></script>
+<script src="js/modules/lineup.js"></script>
+<script src="js/modules/rankings.js"></script>
+<script src="js/modules/forecast.js"></script>
+<script src="js/modules/trades.js"></script>
+<script src="js/modules/waivers.js"></script>
+<script src="js/modules/news.js"></script>
+<script src="js/modules/sportsbook.js"></script>
+<script src="js/modules/gazette.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
