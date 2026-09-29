@@ -1,0 +1,15 @@
+# Supabase CLI settings for Dynasty Room (only the parts that differ from the defaults).
+project_id = "dynasty-room"
+
+[auth]
+site_url = "https://dynasty-room.com"
+additional_redirect_urls = ["https://dynasty-room.com", "https://www.dynasty-room.com", "http://localhost:8080"]
+
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+
+# Stripe signs its webhook calls; it can't send a Supabase login token.
+[functions.stripe-webhook]
+verify_jwt = false

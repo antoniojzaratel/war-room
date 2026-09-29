@@ -126,7 +126,7 @@ function rHistory(){
   const D=HX.data;const yrs=D.seasons.map(x=>x.H.season).sort((a,b)=>b-a);
   const secs=[['all','All time'],['trades','Trades'],...yrs.map(y=>[String(y),String(y)+(D.seasons.find(x=>x.H.season===y).H.complete?'':' (live)')])];
   const nav=`<nav class="chips" style="margin:6px 0 16px" aria-label="History sections">${secs.map(([k,l])=>`<button class="chip" data-hx="${k}" aria-pressed="${HX.sec===k}">${l}</button>`).join('')}</nav>`;
-  const body=HX.sec==='all'?hxAll(D):HX.sec==='trades'?hxTrades(D):hxSeason(D,Number(HX.sec));
+  const body=needsPro('history')&&HX.sec!=='all'?proCard('history'):HX.sec==='all'?hxAll(D):HX.sec==='trades'?hxTrades(D):hxSeason(D,Number(HX.sec));
   return `<h2>History</h2><p class="lede">${D.seasons.length} ${D.seasons.length===1?'season':'seasons'} of ${h(S.league.name)} on Sleeper${D.completeCount?`, ${D.completeCount} finished`:''}. Records count regular-season games; titles and toilet bowls come from the playoff brackets.</p>${nav}${body}`;
 }
 function hxAll(D){
@@ -139,7 +139,7 @@ function hxAll(D){
       <div><span class="psub">Champion</span><div>${x.champ?hWho(x.champ):'n/a'}</div></div>
       <div><span class="psub">Runner-up</span><div>${x.runner?h(hName(x.runner)):'n/a'}</div></div>
       <div><span class="psub">Toilet bowl</span><div>${x.toilet?h(hName(x.toilet)):'n/a'}</div></div></div>`).join('')}</div>`:`<div class="panel">No finished seasons yet. Champions and toilet bowls show up here once a season ends; everything below counts this season so far.</div>`}
-  <h3>League records</h3><div class="hx-recs">
+  ${needsPro('history')?proCard('history'):`<h3>League records</h3><div class="hx-recs">
     ${best?card('Best team ever',`<div>${hWho(best.uid)}</div><div class="num hx-big">${rec(best.w,best.l,best.t)}</div><div class="psub">${best.season}, ${f1(best.pf/best.gp)} pts a week${best.champ?', won the title':''}</div>`):''}
     ${bp&&bp!==best?card('Most points in a season',`<div>${hWho(bp.uid)}</div><div class="num hx-big">${f1(bp.pf)}</div><div class="psub">${bp.season}, ${f1(bp.pf/bp.gp)} a week</div>`):''}
     ${R.hiWeek?card('Highest score in a week',`<div>${hWho(R.hiWeek.uid)}</div><div class="num hx-big">${f1(R.hiWeek.pts)}</div><div class="psub">${R.hiWeek.season}, week ${R.hiWeek.week}</div>`):''}
@@ -156,7 +156,7 @@ function hxAll(D){
    <div class="panel"><h3 style="margin-top:0">Best players in league history</h3><p class="psub" style="margin:-4px 0 8px">Points scored from starting lineups, all teams, all seasons.</p>
     <div class="scroll"><table><tbody>${D.topPlayers.map((p,i)=>{const top=Object.entries(p.by).sort((a,b)=>b[1]-a[1])[0];return `<tr><td class="num mute">${i+1}</td><td>${pcell(p.pid)}<div class="psub">Most for ${h(hName(top[0]))}</div></td><td class="r num">${f0(p.pts)}</td><td class="r psub">${p.games} starts</td></tr>`}).join('')}</tbody></table></div></div>
    <div class="panel"><h3 style="margin-top:0">MVP of each season</h3><div class="scroll"><table><tbody>${D.mvps.filter(Boolean).reverse().map(m=>`<tr><td class="num">${m.season}</td><td>${pcell(m.pid)}<div class="psub">for ${h(hName(m.uid))}</div></td><td class="r num">${f0(m.pts)}</td></tr>`).join('')}</tbody></table></div></div>
-  </div>`;
+  </div>`}`;
 }
 function hxSeason(D,y){
   const X=D.seasons.find(x=>x.H.season===y);if(!X)return '';const H=X.H;const mvp=D.mvps.find(m=>m&&m.season===y);

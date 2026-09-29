@@ -1,11 +1,38 @@
-/* Sportsbook: play-money betting on the league.
-   Every price comes from the same projections and simulations as the rest of War Room, with a 5% house edge.
+/* Sportsbook: play-money betting on the league. Nothing here is real money and nothing can be cashed out.
+   Every price comes from the same projections and simulations as the rest of Dynasty Room, with a 5% house edge.
    Bets are stored on the device (localStorage) and settle automatically from real Sleeper results. */
 const VIG=0.05,START_BANK=1000;
 const B={slip:[],mode:'parlay',stake:50,fmt:store.get('wr_oddsfmt')||'us',msg:'',sec:'games',ppos:'ALL',pmu:'all'};
-const bkKey=()=>`wr_book_${S.leagueId}_${S.username.toLowerCase()}`;
-function bkLoad(){try{const d=JSON.parse(store.get(bkKey())||'null');if(d&&Array.isArray(d.bets))return d}catch(e){}return{bank:START_BANK,bets:[]}}
+const money=x=>(x<0?'-$':'$')+f0(Math.abs(x));
+/* where bets live: this browser in dev mode, the account (Supabase table "bets") when accounts are on */
+const BKR={mine:null,league:null,names:{},loading:false};
+const bkKey=()=>`wr_book_${S.leagueId}_${S.season}_${S.username.toLowerCase()}`;
+const remote=()=>ACC.mode==='live'&&!!ACC.session;
+function bkLoad(){
+  if(remote())return{bank:START_BANK,bets:BKR.mine||[]};
+  try{const d=JSON.parse(store.get(bkKey())||'null');if(d&&Array.isArray(d.bets))return d}catch(e){}
+  try{const old=JSON.parse(store.get(`wr_book_${S.leagueId}_${S.username.toLowerCase()}`)||'null');if(old&&Array.isArray(old.bets))return old}catch(e){}
+  return{bank:START_BANK,bets:[]}}
 function bkSave(d){store.set(bkKey(),JSON.stringify(d))}
+async function bkFetch(){
+  if(!remote()||BKR.loading)return;BKR.loading=true;
+  const uid=ACC.session.user.id;
+  const {data,error}=await ACC.sb.from('bets').select('id,user_id,bet,placed_at').eq('league_id',S.leagueId).eq('season',Number(S.season)).order('placed_at');
+  if(error){console.error(error);BKR.loading=false;return}
+  const rows=(data||[]).map(r=>({...r.bet,id:r.id,user_id:r.user_id,placed:r.placed_at}));
+  BKR.mine=rows.filter(r=>r.user_id===uid);BKR.league=rows;
+  const ids=[...new Set(rows.map(r=>r.user_id))];
+  if(ids.length){const {data:n}=await ACC.sb.from('profile_names').select('id,sleeper_username').in('id',ids);(n||[]).forEach(x=>BKR.names[x.id]=x.sleeper_username)}
+  BKR.loading=false;if(S.tab==='book')bkRerender();
+}
+async function bkPlaceRemote(bets){
+  const rows=bets.map(b=>({league_id:S.leagueId,season:Number(S.season),bet:b}));
+  const {data,error}=await ACC.sb.from('bets').insert(rows).select('id,user_id,bet,placed_at');
+  if(error)throw new Error(error.message);
+  const got=(data||[]).map(r=>({...r.bet,id:r.id,user_id:r.user_id,placed:r.placed_at}));
+  BKR.mine=(BKR.mine||[]).concat(got);BKR.league=(BKR.league||[]).concat(got);
+}
+document.addEventListener('wr:reset',()=>{BKR.mine=null;BKR.league=null;HS.proj={};HS.busy=false});
 const priced=p=>{p=Math.min(.985,Math.max(.015,p));const d=1/Math.min(.995,p*(1+VIG));return Math.max(1.01,Math.round(d*100)/100)};
 function oddsTxt(d){if(B.fmt==='dec')return d.toFixed(2);const a=d>=2?Math.round((d-1)*100/5)*5:-Math.round(100/(d-1)/5)*5;return a>0?'+'+a:String(a)}
 const halfLine=x=>Math.round(x-.5)+.5;
@@ -163,7 +190,7 @@ function settleLeg(l){
   return null}
 function settleBet(b){const r=b.legs.map(settleLeg);if(r.includes('loss'))return{st:'loss',pay:0,r};if(r.includes(null))return{st:'open',r};
   const d=(b.pd||b.legs.reduce((x,l)=>x*l.d,1))/b.legs.reduce((x,l,i)=>x*(r[i]==='push'?l.d:1),1);return{st:r.every(x=>x==='push')?'push':'win',pay:b.stake*Math.max(1,d),r}}
-function ledger(){const d=bkLoad();let bank=d.bank,won=0,lost=0,open=0,pl=0,staked=0;
+function ledger(list){const d=list?{bank:START_BANK,bets:list}:bkLoad();let bank=d.bank,won=0,lost=0,open=0,pl=0,staked=0;
   const rows=d.bets.map(b=>{const s=settleBet(b);staked+=b.stake;if(s.st==='open'){bank-=b.stake;open++}else{bank+=s.pay-b.stake;pl+=s.pay-b.stake;if(s.st==='win')won++;if(s.st==='loss')lost++}return{b,...s}});
   return{d,bank,won,lost,open,pl,staked,rows}}
 
@@ -171,17 +198,19 @@ function ledger(){const d=bkLoad();let bank=d.bank,won=0,lost=0,open=0,pl=0,stak
 function oddBtn(l,label,lock){const on=B.slip.some(x=>legKey(x)===legKey(l));
   if(lock)return `<button class="odd" disabled><span class="ol">${label||''}</span><span class="ov">Final</span></button>`;
   return `<button class="odd" data-leg='${h(JSON.stringify(l))}' aria-pressed="${on}">${label?`<span class="ol">${label}</span>`:''}<span class="ov num">${oddsTxt(l.d)}</span></button>`}
-const SECS=[['games','Matchups'],['props','Player props'],['specials','Specials'],['futures','Futures'],['mine','My bets']];
+const SECS=[['games','Matchups'],['props','Player props'],['specials','Specials'],['futures','Futures'],['hind','Hindsight'],['board','Leaderboard'],['mine','My bets']];
+const FREE_SECS=new Set(['games','mine']);
 function rBook(){
+  if(remote()&&BKR.mine===null){bkFetch();return `<h2>Sportsbook</h2><div class="status">Loading your bets…</div>`}
   const M=S.bookM=S.bookM||buildMarkets();const LG=ledger();
   const live=M.w===S.week&&Object.values(S.games).some(g=>g.state!=='pre');
-  const hdr=`<h2>Sportsbook</h2><p class="lede">Play-money lines on La Dinastía${live?', updating live with the games':''}. Priced from War Room's projections and season simulations with a 5% house edge, and settled automatically from real Sleeper scores.</p>
-  <div class="bk-bar"><div><div class="num bk-big">${f0(LG.bank)}</div><div class="psub">chips available</div></div>
-   <div><div class="num bk-mid ${LG.pl>=0?'up':'down'}">${LG.pl>=0?'+':''}${f0(LG.pl)}</div><div class="psub">profit, ${LG.won}-${LG.lost} record</div></div>
+  const hdr=`<h2>Sportsbook</h2><p class="lede">What would have happened with money on the line? Lines on ${h(S.league.name)}${live?', updating live with the games':''}, priced from our projections and Monte Carlo simulations with a 5% house edge and settled from real Sleeper scores. <b>Play money only:</b> everyone starts the season with $${f0(START_BANK)} that isn’t real and can’t be cashed out.</p>
+  <div class="bk-bar"><div><div class="num bk-big">${money(LG.bank)}</div><div class="psub">play money available</div></div>
+   <div><div class="num bk-mid ${LG.pl>=0?'up':'down'}">${LG.pl>=0?'+':''}${money(LG.pl)}</div><div class="psub">profit, ${LG.won}-${LG.lost} record</div></div>
    <div><div class="num bk-mid">${LG.open}</div><div class="psub">open bets</div></div>
    <div class="chips" style="margin-left:auto"><button class="chip" data-fmt="us" aria-pressed="${B.fmt==='us'}">American</button><button class="chip" data-fmt="dec" aria-pressed="${B.fmt==='dec'}">Decimal</button></div></div>
-  <nav class="chips bk-secs" aria-label="Sportsbook sections">${SECS.map(([k,l])=>`<button class="chip" data-sec="${k}" aria-pressed="${B.sec===k}">${l}${k==='mine'&&LG.open?` (${LG.open})`:''}</button>`).join('')}</nav>`;
-  const body={games:bkGames,props:bkProps,specials:bkSpecials,futures:bkFutures,mine:bkMine}[B.sec](M,LG);
+  <nav class="chips bk-secs" aria-label="Sportsbook sections">${SECS.map(([k,l])=>`<button class="chip" data-sec="${k}" aria-pressed="${B.sec===k}">${l}${k==='mine'&&LG.open?` (${LG.open})`:''}${!FREE_SECS.has(k)&&needsPro('book')?' <span class="lock" aria-label="Premium">Pro</span>':''}</button>`).join('')}</nav>`;
+  const body=!FREE_SECS.has(B.sec)&&needsPro('book')?`<div style="margin-top:14px">${proCard('book')}</div>`:({games:bkGames,props:bkProps,specials:bkSpecials,futures:bkFutures,hind:bkHindsight,board:bkBoard,mine:bkMine}[B.sec]||bkGames)(M,LG);
   return `${hdr}<div class="bk-layout"><div>${body}</div><aside id="slip">${rSlip(LG.bank)}</aside></div>
   ${B.slip.length?`<a class="bk-float" id="bkFloat" href="#slip">${floatText()}</a>`:''}`;
 }
@@ -233,24 +262,79 @@ function bkMine(M,LG){
   return `<div class="panel scroll" style="margin-top:14px"><table><thead><tr><th>Bet</th><th class="r">Stake</th><th class="r">Odds</th><th>Status</th><th class="r">Return</th></tr></thead><tbody>
     ${[...LG.rows].reverse().map(r=>{const d=r.b.pd||r.b.legs.reduce((x,l)=>x*l.d,1);const st={open:'Open',win:'Won',loss:'Lost',push:'Push'}[r.st];
       return `<tr><td>${r.b.legs.length>1?`<b>${r.b.legs.length}-leg parlay</b><div class="psub">${r.b.legs.map((l,i)=>h(legLabel(l))+(r.r[i]?` <span class="${r.r[i]==='win'?'up':r.r[i]==='loss'?'down':''}">(${r.r[i]})</span>`:'')).join('<br>')}</div>`:h(legLabel(r.b.legs[0]))}</td>
-      <td class="r num">${f0(r.b.stake)}</td><td class="r num">${oddsTxt(d)}</td><td><span class="tag ${r.st==='win'?'good':r.st==='loss'?'bad':''}">${st}</span></td>
-      <td class="r num">${r.st==='open'?f0(r.b.stake*d)+' to return':f0(r.pay)}</td></tr>`}).join('')}</tbody></table></div>
-  <div class="row" style="margin-top:10px"><button class="btn ghost" id="bkShare">Copy my bets for the group chat</button><button class="btn ghost" id="bkReset">Reset to ${f0(START_BANK)} chips</button><span class="mute" id="bkShareMsg"></span></div>`;
+      <td class="r num">${money(r.b.stake)}</td><td class="r num">${oddsTxt(d)}</td><td><span class="tag ${r.st==='win'?'good':r.st==='loss'?'bad':''}">${st}</span></td>
+      <td class="r num">${r.st==='open'?money(r.b.stake*d)+' to return':money(r.pay)}</td></tr>`}).join('')}</tbody></table></div>
+  <div class="row" style="margin-top:10px"><button class="btn ghost" id="bkShare">Copy my bets for the group chat</button><button class="btn ghost" id="bkReset">Start over with $${f0(START_BANK)}</button><span class="mute" id="bkShareMsg"></span></div>`;
+}
+/* ---------- Hindsight: what betting every game would have done ---------- */
+const HS={proj:{},busy:false,open:null};
+function hsWeeks(){return range(1,Math.min(S.week,S.regEnd+3)).filter(w=>weekDone(w)&&pairsOf(S.mu[w]).length)}
+function hsLoad(ws){const need=ws.filter(w=>!HS.proj[w]&&!S.proj[w]);if(!need.length||HS.busy)return !need.length;HS.busy=true;
+  Promise.all(need.map(w=>tj(projURL(S.season,w)).then(rows=>{const m={};(rows||[]).forEach(r=>{const p=S.P[r.player_id];if(p)m[r.player_id]=ptsFromStats(r.stats,p.pos)});HS.proj[w]=m})))
+    .then(()=>{HS.busy=false;if(S.tab==='book'&&B.sec==='hind')bkRerender()});return false}
+function hsWeek(w){
+  const pr=HS.proj[w]||S.proj[w]||{};
+  return pairsOf(S.mu[w]).map(([a,b])=>{
+    const side=m=>{const st=(m.starters||[]).filter(id=>id&&id!=='0');let mean=0,v=0;st.forEach(id=>{const x=pr[id]||0;mean+=x;v+=playerSd(id,x)**2});return{rid:m.roster_id,mean,sd:Math.sqrt(v+4),pts:m.points||0}};
+    const A=side(a),Bs=side(b),dm=A.mean-Bs.mean,sd=Math.sqrt(A.sd**2+Bs.sd**2),pA=Phi(dm/sd);
+    const fav=pA>=.5?A:Bs,dog=fav===A?Bs:A,pf=Math.max(pA,1-pA),line=halfLine(Math.abs(dm)),pc_=1-Phi((line-Math.abs(dm))/sd);
+    const T=A.mean+Bs.mean,tl=halfLine(T),po=1-Phi((tl-T)/sd),act=A.pts+Bs.pts;
+    const favWon=fav.pts>dog.pts,covered=fav.pts-dog.pts>line,over=act>tl;
+    return{w,A,B:Bs,fav,dog,pf,line,tl,act,favWon,covered,over,d:{fav:priced(pf),dog:priced(1-pf),cov:priced(pc_),dogsp:priced(1-pc_),o:priced(po),u:priced(1-po)}};
+  });
+}
+function bkHindsight(){
+  const ws=hsWeeks();if(!ws.length)return `<div class="panel" style="margin-top:14px">Hindsight fills in once the first week is final.</div>`;
+  if(!hsLoad(ws))return `<div class="status">Rebuilding each week's pregame lines from that week's projections…</div>`;
+  const G=ws.flatMap(hsWeek),bet=(won,d)=>won?100*(d-1):-100;
+  const strat=[
+    ['Every favorite to win',g=>bet(g.favWon,g.d.fav)],['Every underdog to win',g=>bet(!g.favWon,g.d.dog)],
+    ['Every favorite on the spread',g=>bet(g.covered,g.d.cov)],['Every underdog on the spread',g=>bet(!g.covered,g.d.dogsp)],
+    ['Every over',g=>bet(g.over,g.d.o)],['Every under',g=>bet(!g.over,g.d.u)]];
+  const mine=G.filter(g=>g.A.rid===S.meRid||g.B.rid===S.meRid);
+  const meSide=g=>g.A.rid===S.meRid?g.A:g.B,other=g=>g.A.rid===S.meRid?g.B:g.A;
+  if(mine.length&&S.inLeague){strat.push(['Your team every week',g=>{if(!mine.includes(g))return null;const me=meSide(g),won=me.pts>other(g).pts;return bet(won,me===g.fav?g.d.fav:g.d.dog)}]);
+    strat.push(['Against your team every week',g=>{if(!mine.includes(g))return null;const me=meSide(g),won=me.pts<other(g).pts;return bet(won,me===g.fav?g.d.dog:g.d.fav)}])}
+  const res=strat.map(([n,f])=>{let p=0,w=0,l=0;G.forEach(g=>{const x=f(g);if(x==null)return;p+=x;x>0?w++:l++});return{n,p,w,l}}).sort((a,b)=>b.p-a.p);
+  const ups=G.filter(g=>!g.favWon).sort((a,b)=>b.pf-a.pf).slice(0,5);
+  const favRate=G.filter(g=>g.favWon).length/G.length;
+  const wk=HS.open||ws[ws.length-1];
+  return `<p class="lede" style="margin-top:14px">Every finished week, re-priced with the projections Sleeper had before kickoff. Then: what if you had bet $100 of play money on every game the same way? Favorites won ${pc(favRate)} of ${G.length} games.</p>
+  <div class="hs-grid">${res.map(r=>`<div class="panel hs-s"><div class="psub">${h(r.n)}</div><div class="num hx-big ${r.p>=0?'up':'down'}">${r.p>=0?'+':''}${money(r.p)}</div><div class="psub">${r.w}-${r.l} on $${f0((r.w+r.l)*100)} staked</div></div>`).join('')}</div>
+  ${ups.length?`<h3>Biggest upsets</h3><div class="panel">${ups.map(g=>`<div class="bk-li"><span><span class="pname">${h(tn(g.dog.rid))}</span> beat <span class="pname">${h(tn(g.fav.rid))}</span><div class="psub">Week ${g.w}, ${f1(g.dog.pts)} to ${f1(g.fav.pts)}. Only ${pc(1-g.pf)} to win before kickoff; $100 would have paid ${money(100*g.d.dog)}.</div></span><span class="tag bad">${oddsTxt(g.d.dog)}</span></div>`).join('')}</div>`:''}
+  <h3>Week by week</h3><div class="row"><select id="hsWeek" aria-label="Week">${ws.map(w=>`<option value="${w}" ${w===wk?'selected':''}>Week ${w}</option>`).join('')}</select></div>
+  <div class="panel scroll"><table><thead><tr><th>Favorite</th><th>Underdog</th><th class="r">Pregame</th><th class="r">Total</th><th class="r">Final</th><th>What happened</th></tr></thead><tbody>
+  ${hsWeek(wk).map(g=>`<tr><td><span class="pname">${h(tn(g.fav.rid))}</span><div class="psub">${oddsTxt(g.d.fav)}, proj ${f1(g.fav.mean)}</div></td><td><span class="pname">${h(tn(g.dog.rid))}</span><div class="psub">${oddsTxt(g.d.dog)}, proj ${f1(g.dog.mean)}</div></td>
+    <td class="r num">-${g.line}</td><td class="r num">${g.tl}</td><td class="r num">${f1(g.fav.pts)} to ${f1(g.dog.pts)}</td>
+    <td>${g.favWon?'<span class="tag good">Favorite won</span>':'<span class="tag bad">Upset</span>'} ${g.covered?'<span class="tag">Covered</span>':''} <span class="tag">${g.over?'Over':'Under'}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+/* ---------- league leaderboard (needs accounts) ---------- */
+function bkBoard(M,LG){
+  if(!remote())return `<div class="panel" style="margin-top:14px"><p style="margin:0">The league leaderboard needs accounts, so every manager’s bets are saved in one place. It turns on with sign-in; for now, here’s you: <b>${money(LG.bank)}</b>, ${LG.pl>=0?'+':''}${money(LG.pl)} profit.</p></div>`;
+  const by={};(BKR.league||[]).forEach(b=>(by[b.user_id]=by[b.user_id]||[]).push(b));
+  const rows=Object.entries(by).map(([uid,list])=>{const L=ledger(list);const best=L.rows.filter(r=>r.st==='win').sort((a,b)=>(b.pay-b.b.stake)-(a.pay-a.b.stake))[0];return{uid,L,best}}).sort((a,b)=>b.L.bank-a.L.bank);
+  if(!rows.length)return `<div class="panel" style="margin-top:14px">Nobody in ${h(S.league.name)} has placed a bet yet. Be the first.</div>`;
+  return `<p class="lede" style="margin-top:14px">Every manager in ${h(S.league.name)} who has bet this season, ranked by play money. Everyone started with $${f0(START_BANK)}.</p>
+  <div class="panel scroll"><table><thead><tr><th>#</th><th>Manager</th><th class="r">Bankroll</th><th class="r">Profit</th><th class="r">Record</th><th class="r">Open</th><th>Best hit</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr class="${r.uid===ACC.session.user.id?'me':''}"><td class="num">${i+1}</td><td class="pname">@${h(BKR.names[r.uid]||'manager')}</td><td class="r num">${money(r.L.bank)}</td><td class="r num ${r.L.pl>=0?'up':'down'}">${r.L.pl>=0?'+':''}${money(r.L.pl)}</td><td class="r num">${r.L.won}-${r.L.lost}</td><td class="r num">${r.L.open}</td>
+    <td class="psub">${r.best?`${h(r.best.b.legs.length>1?r.best.b.legs.length+'-leg parlay':legLabel(r.best.b.legs[0]))}, +${money(r.best.pay-r.best.b.stake)}`:''}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function rSlip(bank){
   if(!B.slip.length)return `<div class="panel"><h3 style="margin-top:0">Bet slip</h3><p class="mute" style="margin:0">Tap any odds to add a pick. Add two or more for a parlay.</p>${B.msg?`<p class="up" style="margin:8px 0 0">${h(B.msg)}</p>`:''}</div>`;
+  if(needsPro('book')&&!B.userMode)B.mode='single';
   const multi=B.slip.length>1,parlay=multi&&B.mode==='parlay';
   const PP=parlay?parlayPrice():{d:B.slip.reduce((x,l)=>x*l.d,1),factor:1,impossible:false},pd=PP.d,stake=Math.max(0,Number(B.stake)||0);
   const fc=parlay&&futConflict();
   const total=parlay?stake:stake*B.slip.length,ret=parlay?stake*pd:B.slip.reduce((s,l)=>s+stake*l.d,0);
-  const err=parlay&&PP.impossible?'These picks can\u2019t all win together. Remove one of them.':fc?'Two futures on the same team or the same market can\u2019t share a parlay. Bet them as singles.':total>bank?'Not enough chips for that stake.':stake<=0?'Enter a stake.':'';
+  const err=parlay&&needsPro('book')?'Parlays are a Premium feature. Switch to singles, or upgrade from your account.':parlay&&PP.impossible?'These picks can\u2019t all win together. Remove one of them.':fc?'Two futures on the same team or the same market can\u2019t share a parlay. Bet them as singles.':total>bank?'Not enough play money for that stake.':stake<=0?'Enter a stake.':'';
   return `<div class="panel"><h3 style="margin-top:0">Bet slip</h3>
    ${multi?`<div class="chips" style="margin-bottom:10px"><button class="chip" data-bm="parlay" aria-pressed="${B.mode==='parlay'}">Parlay</button><button class="chip" data-bm="single" aria-pressed="${B.mode==='single'}">Singles</button></div>`:''}
    ${B.slip.map((l,i)=>`<div class="bk-leg"><div>${h(legLabel(l))}<div class="num psub">${oddsTxt(l.d)}</div></div><button class="bk-x" data-rm="${i}" aria-label="Remove pick">×</button></div>`).join('')}
    ${parlay?`<div class="bk-leg"><span><b>${B.slip.length}-leg parlay</b>${Math.abs(PP.factor-1)>.06&&!PP.impossible?`<div class="psub">These picks move together, so the price is ${PP.factor>1?'shortened':'boosted'} to their real joint chance.</div>`:''}</span><b class="num">${oddsTxt(pd)}</b></div>`:''}
    <label class="bk-stake">${parlay||!multi?'Stake':'Stake per bet'} <input id="bkStake" type="number" min="1" step="10" value="${h(B.stake)}" inputmode="numeric"></label>
-   <div class="bk-leg" style="border:0"><span>Total stake</span><b class="num">${f0(total)}</b></div>
-   <div class="bk-leg" style="border:0"><span>Potential return</span><b class="num up" id="bkRet">${f0(ret)}</b></div>
+   <div class="bk-leg" style="border:0"><span>Total stake</span><b class="num">${money(total)}</b></div>
+   <div class="bk-leg" style="border:0"><span>Potential return</span><b class="num up" id="bkRet">${money(ret)}</b></div>
+   <p class="psub" style="margin:0 0 6px">Play money. Not real, can’t be cashed out.</p>
    <p class="down" id="bkErr" style="margin:4px 0 8px"${err?'':' hidden'}>${err}</p>
    <div class="row" style="margin:6px 0 0"><button class="btn" id="bkPlace" ${err?'disabled':''}>Place ${parlay||!multi?'bet':B.slip.length+' bets'}</button><button class="btn ghost" id="bkClear">Clear</button></div></div>`;
 }
@@ -265,20 +349,24 @@ document.addEventListener('click',e=>{
   const sc=e.target.closest('[data-sec]');if(sc){B.sec=sc.dataset.sec;bkRerender();return}
   const pp=e.target.closest('[data-ppos]');if(pp){B.ppos=pp.dataset.ppos;bkRerender();return}
   const rm=e.target.closest('[data-rm]');if(rm){B.slip.splice(Number(rm.dataset.rm),1);bkRerender();return}
-  const bm=e.target.closest('[data-bm]');if(bm){B.mode=bm.dataset.bm;refreshSlip();return}
+  const bm=e.target.closest('[data-bm]');if(bm){B.mode=bm.dataset.bm;B.userMode=true;refreshSlip();return}
   const fm=e.target.closest('[data-fmt]');if(fm){B.fmt=fm.dataset.fmt;store.set('wr_oddsfmt',B.fmt);bkRerender();return}
   if(e.target.id==='bkClear'){B.slip=[];bkRerender();return}
-  if(e.target.id==='bkPlace'){const d=bkLoad(),stake=Math.round(Number(B.stake)||0),t=Date.now();
-    const bets=B.slip.length>1&&B.mode==='parlay'?[{id:t,stake,legs:B.slip,pd:parlayPrice().d}]:B.slip.map((l,i)=>({id:t+i,stake,legs:[l]}));
-    d.bets.push(...bets.map(b=>({...b,placed:new Date().toISOString()})));bkSave(d);
-    B.msg=bets.length>1?`${bets.length} bets placed.`:'Bet placed.';B.slip=[];bkRerender();return}
-  if(e.target.id==='bkReset'){if(confirm('Clear all your bets and reset to '+START_BANK+' chips?')){bkSave({bank:START_BANK,bets:[]});bkRerender()}return}
+  if(e.target.id==='bkPlace'){const stake=Math.round(Number(B.stake)||0),t=Date.now();
+    const bets=(B.slip.length>1&&B.mode==='parlay'?[{id:t,stake,legs:B.slip,pd:parlayPrice().d}]:B.slip.map((l,i)=>({id:t+i,stake,legs:[l]}))).map(b=>({...b,placed:new Date().toISOString()}));
+    const done=()=>{B.msg=bets.length>1?`${bets.length} bets placed.`:'Bet placed.';B.slip=[];bkRerender()};
+    if(remote()){e.target.disabled=true;bkPlaceRemote(bets).then(done).catch(err=>{B.msg='';const m=$('#bkErr');if(m){m.hidden=false;m.textContent='Couldn’t save the bet: '+err.message}e.target.disabled=false})}
+    else{const d=bkLoad();d.bets.push(...bets);bkSave(d);done()}
+    return}
+  if(e.target.id==='bkReset'){if(confirm('Clear all your bets this season and start over with $'+START_BANK+' in play money?')){
+    if(remote()){ACC.sb.from('bets').delete().eq('league_id',S.leagueId).eq('season',Number(S.season)).eq('user_id',ACC.session.user.id).then(()=>{BKR.mine=null;BKR.league=null;bkRerender()})}
+    else{bkSave({bank:START_BANK,bets:[]});bkRerender()}}return}
   if(e.target.id==='bkShare'){const L=ledger();const fmt=r=>{const d=r.b.pd||r.b.legs.reduce((x,l)=>x*l.d,1);const st={open:'OPEN',win:'WON',loss:'LOST',push:'PUSH'}[r.st];
-      return `${st}: ${r.b.legs.length>1?r.b.legs.length+'-leg parlay: ':''}${r.b.legs.map(legLabel).join(' + ')} | ${f0(r.b.stake)} at ${oddsTxt(d)}${r.st==='open'?` to return ${f0(r.b.stake*d)}`:r.st==='win'?`, paid ${f0(r.pay)}`:''}`};
-    const txt=`${tn(S.meRid)} at the ${S.league.name} sportsbook: ${f0(L.bank)} chips, ${L.pl>=0?'+':''}${f0(L.pl)} profit\n`+[...L.rows].reverse().slice(0,15).map(fmt).join('\n');
+      return `${st}: ${r.b.legs.length>1?r.b.legs.length+'-leg parlay: ':''}${r.b.legs.map(legLabel).join(' + ')} | ${money(r.b.stake)} at ${oddsTxt(d)}${r.st==='open'?` to return ${money(r.b.stake*d)}`:r.st==='win'?`, paid ${money(r.pay)}`:''}`};
+    const txt=`${tn(S.meRid)} at the ${S.league.name} sportsbook (play money): ${money(L.bank)}, ${L.pl>=0?'+':''}${money(L.pl)} profit\n`+[...L.rows].reverse().slice(0,15).map(fmt).join('\n');
     const m=$('#bkShareMsg');navigator.clipboard?navigator.clipboard.writeText(txt).then(()=>m.textContent='Copied',()=>m.textContent='Copy blocked here'):m.textContent='Copy blocked here'}
 });
-document.addEventListener('change',e=>{if(e.target.id==='bkMu'){B.pmu=e.target.value;bkRerender()}});
+document.addEventListener('change',e=>{if(e.target.id==='bkMu'){B.pmu=e.target.value;bkRerender()}if(e.target.id==='hsWeek'){HS.open=Number(e.target.value);bkRerender()}});
 document.addEventListener('input',e=>{if(e.target.id==='bkStake'){B.stake=e.target.value;refreshSlip()}});
 registerModule({key:'book',label:'Sportsbook',order:80,live:true,render:rBook});
 

@@ -85,10 +85,12 @@ function rPaper(){
   let P,L,trNote='';
   if(S.aiPaper[S.gzWeek+lang]){P=S.aiPaper[S.gzWeek+lang];L=(LINES[lang]||LINES.en).s}
   else if(native){P=writePaper(f,lang);L=LINES[lang].s}
+  else if(needsPro('gazette')){P=writePaper(f,'en');L=LINES.en.s;trNote='__PRO__'}
+  else if(ACC.mode==='live'){const T=gzAI(f,lang);P=T.P;L=T.L;trNote=T.note}
   else{const T=gzTranslated(f,lang);P=T.P;L=T.L;trNote=T.note}
   const ctrl=`<div class="row"><select id="gzWeek" aria-label="Week">${weeks.map(w=>`<option value="${w}" ${w===S.gzWeek?'selected':''}>${L.week} ${w}${w===S.week?' (live)':''}</option>`).join('')}</select>
    ${langPicker(lang)}
-   <button class="btn ghost" id="btnCopy">Copy for the group chat</button><button class="btn" id="btnAI" hidden>Have Claude write a sharper edition</button><span id="aiMsg" class="mute"></span></div>${trNote?`<p class="psub" style="margin:0 0 12px">${trNote}</p>`:''}`;
+   <button class="btn ghost" id="btnCopy">Copy for the group chat</button><button class="btn" id="btnAI" hidden>Have Claude write a sharper edition</button><span id="aiMsg" class="mute"></span></div>${trNote==='__PRO__'?`<div style="margin:0 0 14px">${proCard('gazette',true)}</div>`:trNote?`<p class="psub" style="margin:0 0 12px">${trNote}</p>`:''}`;
   return `<h2>The weekly roast</h2><p class="lede">Every storyline comes from real results: scores, margins, bench points left behind, lucky wins, trades and waiver moves.</p>${ctrl}
   <article class="paper" id="paperBody" lang="${h(lang)}" dir="${/^(ar|he|fa|ur)/.test(lang)?'rtl':'ltr'}">
     <header class="mast"><div class="name">El Pasquín</div><div class="sub">${h(S.league.name)}, ${h(L.week.toLowerCase())} ${f.w} ${h(L.of||'')} ${S.season}${live?` <span class="stamp">${h(L.live||'Live')}</span>`:''}</div></header>
@@ -103,11 +105,13 @@ function rPaper(){
 /* Claude-written edition: only lights up inside claude.ai where the sample capability exists */
 let samplePromise=null;
 function getSample(){if(!samplePromise)samplePromise=(window.claude&&window.claude.use)?window.claude.use('sample').catch(()=>null):Promise.resolve(null);return samplePromise}
-async function aiEdition(){
-  const s=await getSample();if(!s)return;const f=weekFacts(S.gzWeek);const lang=S.lang;const btn=$('#btnAI'),msg=$('#aiMsg');btn.disabled=true;msg.textContent='Writing…';
-  const facts={league:S.league.name,week:f.w,results:f.games.map(g=>({winner:g.W.t.name,winner_pts:g.W.pts,loser:g.L.t.name,loser_pts:g.L.pts})),
+function gzFacts(f){return{league:S.league.name,week:f.w,results:f.games.map(g=>({winner:g.W.t.name,winner_pts:g.W.pts,loser:g.L.t.name,loser_pts:g.L.pts})),
     teams:f.all.map(x=>({team:x.t.name,manager:x.t.handle,pts:x.pts,won:x.won,record:`${x.rec.w}-${x.rec.l}`,bench_points_left:Math.round(x.bench*10)/10,best_starter:x.star&&{name:nm(x.star.id),pts:x.star.p},worst_starter:x.dud&&{name:nm(x.dud.id),pts:x.dud.p},best_benched:x.benchStar&&{name:nm(x.benchStar.id),pts:x.benchStar.p},teams_outscored:x.beat})),
-    trades:f.trades.map(t=>(t.roster_ids||[]).map(id=>S.byRid[id]&&S.byRid[id].name)),waiver_moves:f.adds&&Object.fromEntries(Object.entries(f.adds).map(([k,v])=>[S.byRid[k]?S.byRid[k].name:k,v]))};
+    trades:f.trades.map(t=>(t.roster_ids||[]).map(id=>S.byRid[id]&&S.byRid[id].name)),waiver_moves:f.adds&&Object.fromEntries(Object.entries(f.adds).map(([k,v])=>[S.byRid[k]?S.byRid[k].name:k,v]))}}
+async function aiEdition(){
+  const f=weekFacts(S.gzWeek);const lang=S.lang;const btn=$('#btnAI'),msg=$('#aiMsg');btn.disabled=true;msg.textContent='Writing…';
+  if(ACC.mode==='live'){try{const out=await accInvoke('ai-gazette',{league_id:S.leagueId,season:S.season,week:f.w,lang,facts:gzFacts(f),fresh:true});S.aiPaper[S.gzWeek+lang]=out;render()}catch(e){msg.textContent=e.message;btn.disabled=false}return}
+  const s=await getSample();if(!s)return;const facts=gzFacts(f);
   const prompt=`You write a savage but friendly satirical fantasy football newspaper for a group of friends. Write in ${lang==='es'?'Mexican Spanish':langName(lang)}, casual and witty, no slurs, no insults about real-life traits. Roast everyone using ONLY these facts; never invent scores or players.\nFACTS: ${JSON.stringify(facts)}\nReturn ONLY JSON: {"headline":string,"deck":string,"stories":[{"h":string,"b":string}] (5-7 stories, 2-4 sentences each),"caps":[{"name":team name,"handle":manager,"pts":number,"body":2-3 sentence roast}] (one per team, ordered by points)}`;
   try{const out=await s.json(prompt,{modelTier:'default'});if(out&&out.headline){S.aiPaper[S.gzWeek+lang]=out;render()}else msg.textContent='The edition came back empty. Try again.'}
   catch(e){msg.textContent=e&&e.code==='rate_limited'?'Too many requests. Wait a minute and retry.':e&&e.code==='not_granted'?'Permission was not granted.':'Could not write the edition this time.';btn.disabled=false}
@@ -119,7 +123,7 @@ document.addEventListener('click',e=>{
   if(e.target.id==='gzLangGo'){const v=($('#gzLangCode').value||'').trim();if(v)setLang(v)}
   if(e.target.id==='btnCopy'){const txt=$('#paperBody').innerText;navigator.clipboard&&navigator.clipboard.writeText(txt).then(()=>{e.target.textContent='Copied'},()=>{e.target.textContent='Copy blocked here'})}
   if(e.target.id==='btnAI')aiEdition();});
-registerModule({key:'paper',label:'Gazette',order:90,render:rPaper,after(){getSample().then(s=>{const b=$('#btnAI');if(b&&s)b.hidden=false})}});
+registerModule({key:'paper',label:'Gazette',order:90,render:rPaper,after(){if(ACC.mode==='live'){const b=$('#btnAI');if(b&&hasPro())b.hidden=false;return}getSample().then(s=>{const b=$('#btnAI');if(b&&s)b.hidden=false})}});
 
 /* ============ Language: any language for the Gazette ============ */
 const LANGS=[['es','Español'],['en','English'],['pt','Português'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['nl','Nederlands'],['pl','Polski'],['sv','Svenska'],['da','Dansk'],['no','Norsk'],['fi','Suomi'],['tr','Türkçe'],['el','Ελληνικά'],['ru','Русский'],['uk','Українська'],['ro','Română'],['ca','Català'],['ar','العربية'],['he','עברית'],['hi','हिन्दी'],['ja','日本語'],['ko','한국어'],['zh-CN','中文 (简体)'],['zh-TW','中文 (繁體)'],['vi','Tiếng Việt'],['th','ไทย'],['id','Bahasa Indonesia'],['ms','Bahasa Melayu'],['tl','Tagalog'],['sw','Kiswahili']];
@@ -166,4 +170,15 @@ async function translateAll(list,lang){
   const worker=async()=>{while(next<list.length&&!firstErr){const i=next++;try{out[i]=await one(list[i])}catch(e){firstErr=e}}};
   await Promise.all([worker(),worker(),worker(),worker()]);
   if(firstErr)throw firstErr;return out;
+}
+
+/* Premium with accounts on: the server writes the edition straight in the reader's language (cached per league, week and language) */
+function gzAI(f,lang){
+  const key=`${S.leagueId}_${f.w}_${lang}`;
+  if(GZTR['ai_'+key])return{P:GZTR['ai_'+key],L:{...LINES.en.s,...(GZTR['ai_'+key].labels||{})},note:`Written in ${h(langName(lang))} by AI from this week’s real results.`};
+  if(!GZTR['ai_busy_'+key]&&!GZTR['ai_err_'+key]){GZTR['ai_busy_'+key]=true;
+    accInvoke('ai-gazette',{league_id:S.leagueId,season:S.season,week:f.w,lang,facts:gzFacts(f)}).then(out=>{GZTR['ai_'+key]=out;delete GZTR['ai_busy_'+key];if(S.tab==='paper')render()})
+      .catch(e=>{GZTR['ai_err_'+key]=e.message;delete GZTR['ai_busy_'+key];if(S.tab==='paper')render()})}
+  const err=GZTR['ai_err_'+key];
+  return{P:writePaper(f,'en'),L:LINES.en.s,note:err?`Couldn’t write the ${h(langName(lang))} edition: ${h(err)} Showing English.`:`Writing this week’s edition in ${h(langName(lang))}… Showing English until it’s ready.`};
 }

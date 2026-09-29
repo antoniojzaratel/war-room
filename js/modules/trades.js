@@ -59,12 +59,13 @@ function rTrade(){
         <td class="r num ${e.now>=0?'up':'down'}">${e.now>=0?'+':''}${f1(e.now)}/wk</td>${S.isDynasty?`<td class="r num ${e.fut>=0?'up':'down'}">${e.fut>=0?'+':''}${f1(e.fut)}/wk</td>`:''}</tr>`}).join('')}</tbody></table></div>${fix}</div>`;
   }
   let html=`<h2 id="tcTop">Trade calculator</h2><p class="lede">Up to ${MAX_TRADE_TEAMS} teams. Tick what each team sends${n>2?' and choose who gets it':''}. Value is ${h(S.valueSource)} with a consolidation premium, so one star beats two pieces that add up to the same number. Lineup now is the change in each team's best weekly lineup over the next four weeks${S.isDynasty?'; in 2 years uses the aging and draft-pick model from Forecast':''}.</p>
-  <div class="row">${n<MAX_TRADE_TEAMS&&addable.length?`<select id="tcAdd" aria-label="Add a team"><option value="">Add a team to the trade</option>${addable.map(t=>`<option value="${t.rid}">${h(t.name)}</option>`).join('')}</select>`:''}
+  <div class="row">${n<MAX_TRADE_TEAMS&&addable.length&&needsPro('multiTrade')?'<button class="btn ghost" data-go="account">Add a third team (Premium)</button>':''}${n<MAX_TRADE_TEAMS&&addable.length&&!needsPro('multiTrade')?`<select id="tcAdd" aria-label="Add a team"><option value="">Add a team to the trade</option>${addable.map(t=>`<option value="${t.rid}">${h(t.name)}</option>`).join('')}</select>`:''}
     ${n===2?`<select id="tcSwap" aria-label="Trade partner">${S.teams.filter(t=>t.rid!==S.tc.teams[0]).map(t=>`<option value="${t.rid}" ${t.rid===S.tc.teams[1]?'selected':''}>Partner: ${h(t.name)}</option>`).join('')}</select>`:''}
     ${moves?'<button class="btn ghost" id="tcClear">Clear trade</button>':''}</div>
   <div class="tl tl-${n}">${E.map(panel).join('')}</div>${res}`;
   html+=`<h2>Trade ideas for ${h(S.byRid[S.meRid].name)}</h2><p class="lede">Every one-for-one and two-for-one deal with every team was tested. These are the ones where your weekly lineup gets better, the value is close to fair, and the other manager doesn't lose starting production, so they have a reason to accept.</p>`;
-  if(!S.suggest)html+='<div class="status">Testing trades across the league…</div>';
+  if(needsPro('tradeFinder'))html+=proCard('tradeFinder',true);
+  else if(!S.suggest)html+='<div class="status">Testing trades across the league…</div>';
   else if(!S.suggest.length)html+='<div class="panel">No win-win deals found right now. Your lineup is tough to upgrade without overpaying.</div>';
   else html+=`<div class="panel scroll"><table><thead><tr><th>Partner</th><th>You give</th><th>You get</th><th class="r">Your lineup</th><th class="r">Their lineup</th><th class="r">Value</th><th></th></tr></thead><tbody>
     ${S.suggest.map((s,i)=>`<tr><td>${h(S.byRid[s.rid].name)}</td><td>${s.give.map(id=>h(S.P[id].n)).join(' + ')}</td><td>${s.get.map(id=>h(S.P[id].n)).join(' + ')}</td>
@@ -103,4 +104,4 @@ document.addEventListener('click',e=>{
     s.give.forEach(id=>mv['p:'+id]={from:S.meRid,to:s.rid});s.get.forEach(id=>mv['p:'+id]={from:s.rid,to:S.meRid});
     S.tc={teams:[S.meRid,s.rid],mv};render();$('#tcTop').scrollIntoView({behavior:'smooth'})}
 });
-registerModule({key:'trade',label:'Trades',order:50,render:rTrade,after(){if(!S.suggest)setTimeout(()=>{S.suggest=suggestTrades();if(S.tab==='trade')render()},30)}});
+registerModule({key:'trade',label:'Trades',order:50,render:rTrade,after(){if(!S.suggest&&!needsPro('tradeFinder'))setTimeout(()=>{S.suggest=suggestTrades();if(S.tab==='trade')render()},30)}});

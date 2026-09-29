@@ -94,7 +94,7 @@ function fcFuture(){
 }
 const FSECS=[['season','This season'],['outlook','Team outlook'],['future','Next 3 seasons']];
 function rForecast(){
-  const body={season:fcSeason,outlook:fcOutlook,future:fcFuture}[FC.sec]||fcSeason;
+  const body=FC.sec==='outlook'&&needsPro('outlook')?()=>proCard('outlook'):FC.sec==='future'&&needsPro('future')?()=>proCard('future'):({season:fcSeason,outlook:fcOutlook,future:fcFuture}[FC.sec]||fcSeason);
   return `<h2>Forecast</h2><nav class="chips" style="margin:6px 0 14px" aria-label="Forecast sections">${FSECS.map(([k,l])=>`<button class="chip" data-fcsec="${k}" aria-pressed="${FC.sec===k}">${l}</button>`).join('')}</nav>${body()}`;
 }
 document.addEventListener('click',e=>{if(S.tab!=='forecast')return;const b=e.target.closest('[data-fcsec]');if(b){FC.sec=b.dataset.fcsec;store.set('wr_fcsec',FC.sec);render()}});

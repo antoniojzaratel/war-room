@@ -51,7 +51,7 @@ function rLineup(){
   const head=`<h2>Optimal lineup</h2><p class="lede">${mode==='win'?`Upside mode: instead of the most projected points, this picks the lineup with the best chance to beat your week ${S.planWeek} opponent. When you're the underdog it reaches for boom players with a high ceiling, even if they project a little less; when you're the favorite it prefers steady ones.`:'Built from Sleeper projections scored with your league’s exact settings. Players whose games already kicked off stay locked where they are.'}</p>
   <div class="row"><select id="luTeam" aria-label="Team">${opts}</select>
     <div class="chips" role="group" aria-label="Optimise for"><button class="chip" data-lm="week" aria-pressed="${mode==='week'}">Most points, week ${S.planWeek}</button><button class="chip" data-lm="win" aria-pressed="${mode==='win'}">Best chance to win, week ${S.planWeek}</button><button class="chip" data-lm="ros" aria-pressed="${mode==='ros'}">Next 4 weeks</button></div></div>`;
-  if(mode==='win')return head+rWinMode(t);
+  if(mode==='win')return head+(needsPro('upside')?proCard('upside'):rWinMode(t));
   const fn=mode==='week'?wkPlan:ros;const r=currentVsOptimal(t,fn);
   const gain=r.optT-r.curT;const curSet=new Set(r.cur.map(x=>x.id)),optSet=new Set(r.opt.map(x=>x.id));
   const ins=[...optSet].filter(id=>id&&!curSet.has(id)),outs=[...curSet].filter(id=>id&&!optSet.has(id));

@@ -1,0 +1,11 @@
+# Cloudflare Pages security headers for dynasty-room.com
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://sleepercdn.com; connect-src 'self' https://api.sleeper.app https://*.supabase.co wss://*.supabase.co https://site.api.espn.com https://api.mymemory.translated.net https://cdn.jsdelivr.net; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+/js/*
+  Cache-Control: public, max-age=300
+/css/*
+  Cache-Control: public, max-age=300

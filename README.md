@@ -1,49 +1,47 @@
-# War Room
+# Dynasty Room
 
-A live fantasy football toolkit for a Sleeper league (built for La Dinastía). One page, no server, no API keys: it reads your league straight from Sleeper in the browser.
+The front office for your Sleeper leagues: [dynasty-room.com](https://dynasty-room.com).
 
-| Module | What it does |
-| --- | --- |
-| **Live** | Your matchup as a scoreboard with win probability, and every player in every matchup with points, pregame projection and live projection. Refreshes every 60 seconds during games. |
-| **Lineup** | Optimal lineup from Sleeper projections scored with your league's exact settings, with "start X over Y" swaps. Upside mode picks the lineup with the best chance to beat this week's opponent, using each player's floor and ceiling. |
-| **Rankings** | Season power rankings (all-play, record, lineup strength) and dynasty power rankings (starters, bench, draft picks, age, contention window). |
-| **Forecast** | This season: champion and toilet bowl loser forecasts, playoff odds, and what this week is worth. Team outlook: every team labeled Dynasty, Contender, Win now, Rising, Rebuilding, Tanking or Stuck in the middle, with young core, players to sell, draft capital and a recommended move. Next 3 seasons: rank chart and projected lineups as players age and draft picks become rookies. |
-| **Trades** | Calculator for 2 to 4 teams: value, lineup impact now and in two years for every team, and a suggestion to balance it. Plus win-win trade ideas tested against every team. |
-| **Waivers** | Best free agents, 48-hour trending adds, and your drop candidates. |
-| **News** | League-wide injury report and NFL headlines tagged with who rosters each player. |
-| **Sportsbook** | Play-money betting: spreads, moneylines, totals, team totals, player over/unders, player duels, specials, futures (champion, toilet bowl, playoffs, win totals) and parlays, including same-game parlays priced by simulating the week player by player. Settles automatically from real Sleeper scores. |
-| **History** | Every season the league has on Sleeper: trophy case, all-time standings, league records, best and worst teams ever, best players in league history, MVP of each season, per-season standings with champion, runner-up and toilet bowl, and a ledger that grades every trade by production and current value. |
-| **Gazette** | *El Pasquín*, a weekly roast newspaper built from real results. Spanish and English are written natively; the Language button machine-translates it into any other language, keeping names intact. |
+Sign in with Google, link your Sleeper username, pick any of your leagues. Everything is computed in the browser from Sleeper's public data with our own value model and Monte Carlo simulations; accounts, payments and the AI gazette run on Supabase, Stripe and Anthropic.
 
-## Put it online with GitHub Pages (about 3 minutes)
+| Module | Free | Premium |
+| --- | --- | --- |
+| **Live** | Every starter's points, pregame projection and live projection; win probability on the game clock | |
+| **Lineup** | Most projected points this week and over the next four | Best chance to win: the lineup most likely to beat this week's opponent, with floors and ceilings |
+| **Rankings** | Power and dynasty rankings; player rankings with tiers (week, rest of season, dynasty); Start/Sit simulator | |
+| **Forecast** | Playoff, bye, title and toilet bowl odds; what this week is worth | Team outlook (dynasty, contender, win now, rising, rebuilding, tanking, stuck); next three seasons with aging and draft picks |
+| **Trades** | Two-team calculator: value, lineup impact now and in two years | Three- and four-team trades; trade finder for win-win deals |
+| **Waivers / News** | Free agents, trending adds, drop candidates, injury report, Sleeper-wide adds and drops | |
+| **Sportsbook** (play money) | Spreads, moneylines, totals, team totals, singles, your bets | Player props and duels, specials, futures, parlays with same-game pricing, Hindsight backtests, league leaderboard |
+| **History** | Trophy case | All-time standings, records, best players, MVPs, every season, graded trade ledger |
+| **Gazette** | Weekly roast in Spanish or English | Written by AI in any language |
 
-1. Create a new **public** repository on GitHub, for example `war-room`. Don't add a README.
-2. Upload everything in this folder (drag the files and folders into the repository page, or push with git — see below).
-3. In the repository go to **Settings → Pages**. Under *Build and deployment* choose **Deploy from a branch**, branch **main**, folder **/ (root)**, then **Save**.
-4. After a minute your site is live at `https://<your-github-username>.github.io/war-room/`. Share that link with the league.
-5. Optional: put that address in `siteUrl` inside `js/config.js`, so the claude.ai preview links people to the live site.
+Premium is US$4.99 a month or US$14.99 a year. La Dinastía gets it free with an invite code.
 
-Pushing with git instead of uploading:
+## Layout
 
-```bash
-git remote add origin https://github.com/<your-github-username>/war-room.git
-git push -u origin main
+```
+index.html, privacy.html, terms.html, _headers   the site (served as-is; no build step)
+css/app.css
+js/config.js          settings: Supabase URL and anon key, prices, data sources
+js/core.js            Sleeper loading, value model, lineup optimizer, simulations, future model, brackets
+js/account.js         Google sign-in, plans, Premium locks, checkout
+js/modules/*.js       one file per tab; each calls registerModule({key, label, order, render})
+js/app.js             landing page, Sleeper linking, league picker, routing, boot
+supabase/migrations   database schema with row level security
+supabase/functions    create-checkout, billing-portal, stripe-webhook, ai-gazette
+docs/LAUNCH.md        step-by-step launch on dynasty-room.com
+scripts/build.py      bundles everything into dist/dynasty-room.html
 ```
 
-## Using it with the league
+## Running locally
 
-- Everyone opens the same link, types their Sleeper username and picks one of their leagues. The choice is remembered on that device; **Switch user** at the top starts over.
-- Personal links skip the sign-in: `.../war-room/?user=FerCantu2001&league=1314840770154364928`.
-- Jump straight to a module: add `#book`, `#forecast`, `#paper` and so on to the link.
-- Sportsbook chips live in each person's browser (1,000 to start). Use **Copy my bets for the group chat** to post slips and results.
+Serve the folder with any static server, for example `python3 -m http.server 8080`, and open `http://localhost:8080`. With `supabase.url` empty in `js/config.js` it runs in dev mode: Sleeper username sign-in, every feature unlocked, bets saved in the browser.
 
-## Changing things
+## Launching
 
-- Featured league, site address and the Gazette translation service: `js/config.js`.
-- Each module is one file in `js/modules/`. A module registers itself with `registerModule({key, label, order, render})`, so adding a tab is one new file plus one `<script>` line in `index.html`.
-- Shared data and models (Sleeper loading, optimal lineup, season simulation, values, picks) are in `js/core.js`.
-- `python3 scripts/build.py` bundles everything into `dist/war-room.html`, a single file you can send to someone or open offline.
+Follow [docs/LAUNCH.md](docs/LAUNCH.md).
 
-## Data sources
+## Data
 
-Sleeper API (league, rosters, matchups, projections, live points, brackets), ESPN public scoreboard and news (game clocks, headlines), FantasyCalc market values with a built-in model as fallback. Everything is fetched live on each visit; the large Sleeper players file is cached in the browser for a day, as Sleeper asks.
+Sleeper (leagues, rosters, matchups, projections, dynasty ADP, schedule, trending players, brackets, drafts, transactions), ESPN's public scoreboard for live game clocks (optional, `sources.espnClock`). Player values, forecasts, odds and lineups come from Dynasty Room's own models. Not affiliated with Sleeper, the NFL or any team.

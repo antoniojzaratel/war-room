@@ -1,4 +1,4 @@
-/* War Room core: config, helpers, Sleeper loading, models. Every module reads the shared state S. */
+/* Dynasty Room core: config, helpers, Sleeper loading, models. Every module reads the shared state S. */
 /* ============ basics ============ */
 const DEF_LEAGUE=CONFIG.featuredLeagueId||'', DEF_USER='antoniojzaratel';
 const API='https://api.sleeper.app';
@@ -8,7 +8,7 @@ const ORD=['QB','RB','WR','TE','K','DEF','REC_FLEX','WRRB_FLEX','FLEX','SUPER_FL
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const qs=new URLSearchParams(location.search);
 const S={leagueId:qs.get('league')||store.get('wr_league')||'',username:qs.get('user')||store.get('wr_user')||'',myLeagues:null,
-  tab:'live',lang:store.get('wr_lang')||'es',P:{},proj:{},ros:{},val:{},mu:{},tx:{},games:{},liveTeam:{},news:[],trend:[],sim:null,
+  tab:'live',lang:store.get('wr_lang')||'es',P:{},proj:{},ros:{},val:{},adp:{},padp:{},mu:{},tx:{},games:{},liveTeam:{},news:[],trend:[],sim:null,
   tc:null,lineupTeam:null,lineupMode:'week',wvPos:'ALL',gzWeek:null,suggest:null,aiPaper:{}};
 const $=s=>document.querySelector(s);
 const h=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -46,7 +46,7 @@ function ptsFromStats(st,pos){
 }
 
 async function load(){
-  S.P={};S.proj={};S.ros={};S.val={};S.mu={};S.tx={};S.sim=null;S.suggest=null;S.aiPaper={};
+  S.P={};S.proj={};S.ros={};S.val={};S.adp={};S.padp={};S.mu={};S.tx={};S.sim=null;S.suggest=null;S.aiPaper={};
   $('#main').innerHTML='<div class="status">Pulling league, rosters, projections and values…</div>';
   document.dispatchEvent(new Event('wr:reset'));
   const L=S.leagueId;
@@ -82,41 +82,66 @@ async function load(){
   // projections: this week + next three for rest-of-season strength
   const pweeks=range(S.week,Math.min(S.week+3,18));
   const lastMu=Math.max(S.regEnd,S.week);
-  const [projs,mus,txs,espn,news,trend]=await Promise.all([
+  const SRC=CONFIG.sources||{};
+  const [projs,mus,txs,sched,espn,news,trend]=await Promise.all([
     Promise.all(pweeks.map(w=>tj(projURL(S.season,w)))),
     Promise.all(range(1,lastMu).map(w=>tj(`${API}/v1/league/${L}/matchups/${w}`))),
     Promise.all(range(1,S.week).map(w=>tj(`${API}/v1/league/${L}/transactions/${w}`))),
-    tj('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'),
-    tj('https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=50'),
+    tj(`${API}/schedule/nfl/regular/${S.season}`),
+    SRC.espnClock?tj('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'):null,
+    SRC.espnNews?tj('https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=50'):null,
     tj(`${API}/v1/players/nfl/trending/add?lookback_hours=48&limit=60`)]);
-  pweeks.forEach((w,i)=>{const m={};(projs[i]||[]).forEach(r=>{const p=P[r.player_id];if(p)m[r.player_id]=ptsFromStats(r.stats,p.pos)});S.proj[w]=m});
+  pweeks.forEach((w,i)=>{const m={};(projs[i]||[]).forEach(r=>{const p=P[r.player_id];if(!p)return;m[r.player_id]=ptsFromStats(r.stats,p.pos);
+    const st=r.stats||{};if(st.adp_dd_ppr>0&&st.adp_dd_ppr<999)S.adp[r.player_id]=Math.min(S.adp[r.player_id]||999,st.adp_dd_ppr);
+    if(st.pos_adp_dd_ppr>0&&st.pos_adp_dd_ppr<999)S.padp[r.player_id]=Math.min(S.padp[r.player_id]||999,st.pos_adp_dd_ppr)});S.proj[w]=m});
   S.projOK=!!(projs[0]&&projs[0].length);
   for(const id in P){let s=0;pweeks.forEach(w=>s+=(S.proj[w][id]||0));S.ros[id]=s/pweeks.length}
   range(1,lastMu).forEach((w,i)=>S.mu[w]=mus[i]||[]);
   range(1,S.week).forEach((w,i)=>S.tx[w]=(txs[i]||[]).filter(t=>t.status==='complete'));
-  parseESPN(espn);S.planWeek=Math.min(S.weekOver?S.week+1:S.week,18);S.news=(news&&news.articles)||[];S.trend=trend||[];
+  S.sched=sched||[];parseGames(S.sched,espn);S.planWeek=Math.min(S.weekOver?S.week+1:S.week,18);S.news=(news&&news.articles)||[];S.trend=trend||[];
   const [wb,lb]=await Promise.all([tj(`${API}/v1/league/${L}/winners_bracket`),tj(`${API}/v1/league/${L}/losers_bracket`)]);
   S.wb=wb||[];S.lb=lb||[];
-  await loadValues();
+  computeHist();computeValues();
   computeAll();
   renderChrome();render();
   startLiveLoop();
 }
-function parseESPN(d){
-  S.games={};S.espnOK=!!d;S.weekOver=false;if(!d||!d.events)return;
-  // On Tuesdays ESPN already shows next week's games. Those clocks say nothing about the Sleeper week, so ignore them.
-  const ew=d.week&&d.week.number,et=d.season&&d.season.type;
-  if(ew&&et===2&&S.week&&ew!==S.week){S.weekOver=ew>S.week;return}
-  for(const ev of d.events){const c=ev.competitions&&ev.competitions[0];if(!c)continue;const st=ev.status||c.status||{};
-    for(const tm of c.competitors||[]){let ab=(tm.team&&tm.team.abbreviation)||'';if(ab==='WSH')ab='WAS';
-      S.games[ab]={state:st.type&&st.type.state,period:st.period,clock:st.clock,detail:st.type&&st.type.shortDetail}}}
+/* game state for the Sleeper week: the Sleeper schedule says pre / in / final; ESPN, when enabled, adds the live clock */
+function parseGames(sched,espn){
+  S.games={};S.weekOver=false;S.espnOK=!!espn;
+  const wkGames=(sched||[]).filter(g=>g.week===S.week&&g.status!=='canceled');
+  const st=s=>s==='complete'?'post':s==='in_game'||s==='in_progress'?'in':'pre';
+  for(const g of wkGames)for(const tm of [g.home,g.away])S.games[tm]={state:st(g.status),detail:g.status==='complete'?'Final':g.status==='pre_game'?g.date:'In progress'};
+  if(espn&&espn.events&&(espn.week||{}).number===S.week){
+    for(const ev of espn.events){const c=ev.competitions&&ev.competitions[0];if(!c)continue;const s=ev.status||c.status||{};
+      for(const tm of c.competitors||[]){let ab=(tm.team&&tm.team.abbreviation)||'';if(ab==='WSH')ab='WAS';
+        S.games[ab]={state:s.type&&s.type.state,period:s.period,clock:s.clock,detail:s.type&&s.type.shortDetail}}}}
+  const all=Object.values(S.games);
+  // the week is over once every game is final (Sleeper keeps the same week number until Wednesday)
+  if(all.length&&all.every(g=>g.state==='post')&&(S.mu[S.week]||[]).some(m=>m.points>0))S.weekOver=true;
+  if(S.state&&S.state.season_type==='regular'&&S.state.week>S.week)S.weekOver=true;
 }
-async function loadValues(){
-  const L=S.league,sf=S.slots.includes('SUPER_FLEX'),ppr=(L.scoring_settings&&L.scoring_settings.rec)??1;
-  const d=await tj(`https://api.fantasycalc.com/values/current?isDynasty=${S.isDynasty}&numQbs=${sf?2:1}&numTeams=${L.total_rosters||S.teams.length}&ppr=${ppr}`);
-  let n=0;if(Array.isArray(d))for(const r of d){const id=r.player&&r.player.sleeperId;if(id&&S.P[id]){S.val[id]=r.value;n++}}
-  S.valueSource=n>50?'FantasyCalc market values':'War Room model values';
-  for(const id in S.P){if(S.val[id]==null){const m=modelValue(id);if(m>0)S.val[id]=n>50?Math.round(m*.6):m}}
+/* ============ Dynasty Room value model ============
+   Points above replacement at each position for this season and the next three (aging curves in ppgYear),
+   discounted by year, blended with Sleeper's dynasty ADP as the market's read. Scaled so the best asset is about 10,000. */
+function computeValues(){
+  const n=S.league.total_rosters||S.teams.length,slots=S.slots,cnt=p=>slots.filter(s=>s===p).length;
+  const flex=cnt('FLEX'),sf=cnt('SUPER_FLEX'),wr_=cnt('WRRB_FLEX'),rec=cnt('REC_FLEX');
+  const starters={QB:(cnt('QB')+sf*.9)*n,RB:(cnt('RB')+flex*.45+wr_*.5)*n,WR:(cnt('WR')+flex*.45+wr_*.5+rec*.7)*n,TE:(cnt('TE')+flex*.1+rec*.3)*n};
+  const Y=S.isDynasty?[0,1,2,3]:[0],disc=[1,.8,.62,.48];
+  const ids=Object.keys(S.P).filter(id=>{const p=S.P[id];return p.team||(S.isDynasty&&p.active&&p.age&&p.age<30)});
+  const raw={};
+  for(const y of Y){const byPos={QB:[],RB:[],WR:[],TE:[]};
+    for(const id of ids){const p=S.P[id];if(!byPos[p.pos])continue;byPos[p.pos].push([id,ppgYear(id,y)])}
+    for(const pos in byPos){const arr=byPos[pos].sort((a,b)=>b[1]-a[1]);const k=Math.max(1,Math.round(starters[pos]||n));const repl=(arr[k]||[0,0])[1];
+      for(const [id,v] of arr){const vor=Math.max(0,v-repl);if(vor>0)raw[id]=(raw[id]||0)+vor*disc[y]}}}
+  const vmax=Math.max(1,...Object.values(raw));
+  for(const id of ids){const p=S.P[id];if(p.pos==='K'||p.pos==='DEF'){S.val[id]=p.team?40:0;continue}
+    const model=(raw[id]||0)/vmax;
+    const mkt=S.adp[id]?Math.exp(-(S.adp[id]-1)/55):0;
+    const v=S.isDynasty?(S.adp[id]?.6*model+.4*mkt:model*.9):model;
+    if(v>0)S.val[id]=Math.round(10000*Math.pow(v,1.1))}
+  S.valueSource='the Dynasty Room value model';
 }
 function modelValue(id){
   const p=S.P[id];if(!p||!p.team)return 0;if(p.pos==='K'||p.pos==='DEF')return 40;
@@ -143,7 +168,7 @@ const wkPlan=id=>(S.proj[S.planWeek]||{})[id]||0;
 const ros=id=>S.ros[id]||0;
 function isLocked(id){if(S.weekOver)return true;const g=S.games[(S.P[id]||{}).team];return !!g&&(g.state==='in'||g.state==='post')}
 function gameFrac(id){if(S.weekOver)return 0;const p=S.P[id];if(!p||!p.team)return 0;const g=S.games[p.team];if(!g)return null;
-  if(g.state==='pre')return 1;if(g.state==='post')return 0;const per=g.period||1,clk=g.clock||0;if(per>4)return .02;return Math.max(.02,((4-per)*900+clk)/3600)}
+  if(g.state==='pre')return 1;if(g.state==='post')return 0;if(g.period==null)return .5;const per=g.period||1,clk=g.clock||0;if(per>4)return .02;return Math.max(.02,((4-per)*900+clk)/3600)}
 function livePlayer(id,actual){const full=wk(id);let r=gameFrac(id);if(r==null)r=actual>0?.3:1;const rem=full*r;
   return{actual,full,rem,mean:actual+rem,sd:Math.max(1.5,full*.45)*Math.sqrt(r),r}}
 
@@ -256,8 +281,8 @@ function registerModule(m){MODULES.push(m)}
 let liveTimer=null;
 function startLiveLoop(){clearInterval(liveTimer);liveTimer=setInterval(async()=>{
   if(document.hidden)return;const anyLive=Object.values(S.games).some(g=>g.state==='in');if(!anyLive)return;
-  const [mu,espn]=await Promise.all([tj(`${API}/v1/league/${S.leagueId}/matchups/${S.week}`),tj('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard')]);
-  if(mu)S.mu[S.week]=mu;if(espn)parseESPN(espn);computeLive();S.sim=simulate(2000);S.bookM=null;S.whatIf=null;renderChrome();const m=MODULES.find(x=>x.key===S.tab);if(m&&m.live)render()},60000)}
+  const [mu,sched,espn]=await Promise.all([tj(`${API}/v1/league/${S.leagueId}/matchups/${S.week}`),tj(`${API}/schedule/nfl/regular/${S.season}`),(CONFIG.sources||{}).espnClock?tj('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'):null]);
+  if(mu)S.mu[S.week]=mu;if(sched)S.sched=sched;parseGames(S.sched,espn);computeLive();S.sim=simulate(2000);S.bookM=null;S.whatIf=null;renderChrome();const m=MODULES.find(x=>x.key===S.tab);if(m&&m.live)render()},60000)}
 
 
 /* ============ future model: the next three seasons ============ */
@@ -283,8 +308,9 @@ function ppgYear(id,y){
   if(p.exp===0)f*=1.1;
   let curve=v*f;
   // young players the market prices well above their current production are read as breakouts in progress
-  const val=S.val[id]||0;
-  if(age+y<=26&&val>0){const implied=27*Math.pow(val/(9500*POSF(p.pos)),1/1.7);if(implied>curve)curve=curve*.5+implied*.5*Math.min(1,.7+.15*y)}
+  const pr=S.padp[id];
+  if(age+y<=26&&pr){const implied={QB:14+10*Math.exp(-(pr-1)/12),RB:6+16*Math.exp(-(pr-1)/18),WR:6+16*Math.exp(-(pr-1)/22),TE:5+12*Math.exp(-(pr-1)/10)}[p.pos]||0;
+    if(implied>curve)curve=curve*.5+implied*.5*Math.min(1,.7+.15*y)}
   return Math.max(0,curve);
 }
 /* a draft pick becomes a rookie; expected points per game by round and likely slot */
@@ -299,16 +325,19 @@ function optimizeItems(items){
   for(const s of S.slotsSorted){const i=pool.findIndex((p,k)=>!used.has(k)&&ELIG[s].includes(p.pos));if(i>=0){used.add(i);total+=pool[i].pts;lineup.push({slot:s,...pool[i]})}}
   return{total,lineup};
 }
-function computeFuture(){
-  const T=S.teams,s0=Number(S.season),n=T.length;
+function computeHist(){
+  const done=range(1,S.week).filter(w=>(S.mu[w]||[]).some(m=>m.points>0)&&(w<S.week||S.weekOver));
   // season-to-date points per game from league matchups, a fallback when weekly projections are thin
   S.histPpg={};const cnt={};
-  for(const w of S.doneWeeks||[])for(const m of S.mu[w]||[])for(const id of (m.starters||[])){const v=(m.players_points||{})[id];if(v==null)continue;S.histPpg[id]=(S.histPpg[id]||0)+v;cnt[id]=(cnt[id]||0)+1}
+  for(const w of done)for(const m of S.mu[w]||[])for(const id of (m.starters||[])){const v=(m.players_points||{})[id];if(v==null)continue;S.histPpg[id]=(S.histPpg[id]||0)+v;cnt[id]=(cnt[id]||0)+1}
   for(const id in S.histPpg)S.histPpg[id]/=cnt[id];
   // week-to-week volatility of every rostered player, from the league's own box scores (zeros skipped: usually a bye or a DNP)
   const sum={},sq={},nn={};
-  for(const w of S.doneWeeks||[])for(const m of S.mu[w]||[])for(const [id,v] of Object.entries(m.players_points||{})){if(!v)continue;sum[id]=(sum[id]||0)+v;sq[id]=(sq[id]||0)+v*v;nn[id]=(nn[id]||0)+1}
+  for(const w of done)for(const m of S.mu[w]||[])for(const [id,v] of Object.entries(m.players_points||{})){if(!v)continue;sum[id]=(sum[id]||0)+v;sq[id]=(sq[id]||0)+v*v;nn[id]=(nn[id]||0)+1}
   S.vol={};for(const id in nn){const n=nn[id],mu=sum[id]/n;S.vol[id]={n,sd:Math.sqrt(Math.max(0,sq[id]/n-mu*mu)*n/Math.max(1,n-1))}}
+}
+function computeFuture(){
+  const T=S.teams,s0=Number(S.season),n=T.length;
   const YEARS=[0,1,2];
   T.forEach(t=>{
     t.fut=YEARS.map(y=>{
