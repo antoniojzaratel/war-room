@@ -15,7 +15,7 @@ function rRank(){
   html+=`<h2>${S.isDynasty?'Dynasty power rankings':'Keeper value rankings'}</h2><p class="lede">Total asset value: starters at full value, the best eight bench players at 35%, and owned draft picks at 60%, with picks priced by where the original team is likely to finish. Values from ${h(S.valueSource)}.</p>
   <div class="panel scroll"><table><thead><tr><th>#</th><th>Team</th><th>Window</th><th>Total value</th><th class="r">Starters</th><th class="r">Bench</th><th class="r">Picks</th><th class="r">Starter age</th><th class="r">Win-now rank</th></tr></thead><tbody>
   ${D.map(t=>`<tr class="${t.rid===S.meRid?'me':''}"><td class="num" style="font-size:20px">${t.dRank}</td><td><div class="pname">${h(t.name)}</div><div class="psub">${t.myPicks.filter(p=>p.round===1).length} first-round picks</div></td>
-    <td><span class="tag ${/Juggernaut|Contender|Rising|Smart/.test(t.tier)?'good':/Stuck/.test(t.tier)?'bad':''}">${t.tier}</span></td>
+    <td><span class="tag ${({good:'good',bad:'bad'})[OUTLOOK[t.outlook].tone]||''}">${h(t.tier)}</span></td>
     <td style="min-width:140px"><div class="bar"><i style="width:${t.dTotal/maxD*100}%;background:var(--amber)"></i></div><div class="psub">${f0(t.dTotal)}</div></td>
     <td class="r num">${f0(t.dStart)}</td><td class="r num">${f0(t.dBench)}</td><td class="r num">${f0(t.dPicks)}</td><td class="r num">${t.age?f1(t.age):'n/a'}</td><td class="r num">${t.nowRank}</td></tr>`).join('')}
   </tbody></table></div>`;

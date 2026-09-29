@@ -16,7 +16,7 @@ function oppOf(w,rid){const p=pairsOf(S.mu[w]).find(x=>x.some(m=>m.roster_id===r
 const mkOf=(w,rid)=>Math.min(rid,oppOf(w,rid));
 
 /* ---------- when things are over ---------- */
-function weekDone(w){if(w<S.week)return (S.mu[w]||[]).some(m=>m.points>0);if(w>S.week)return false;
+function weekDone(w){if(w<S.week||(w===S.week&&S.weekOver))return (S.mu[w]||[]).some(m=>m.points>0);if(w>S.week)return false;
   const g=Object.values(S.games);return g.length>0&&g.every(x=>x.state==='post')&&(S.mu[w]||[]).some(m=>m.points>0)}
 function bookWeek(){let w=S.week;if(weekDone(w))w++;return w<=S.regEnd+3&&pairsOf(S.mu[w]).length?w:null}
 const gameOver=id=>{const g=S.games[(S.P[id]||{}).team];return !!g&&g.state==='post'};
@@ -65,6 +65,8 @@ function buildMarkets(){
         const px=Phi((x.mean-y.mean)/Math.sqrt(x.sd**2+y.sd**2)),done=w===S.week&&gameOver(x.id)&&gameOver(y.id);
         M.duels.push({mk,lock:done,x,y,dx:{t:'pdu',w,pid:x.id,opp:y.id,rid:x.rid,d:priced(px)},dy:{t:'pdu',w,pid:y.id,opp:x.id,rid:y.rid,d:priced(1-px)}})}
     }
+    M.simPlayers=[];for(const [a,b] of pairs)for(const m of [a,b])for(const id of weekStarters(w,m.roster_id)){const d=playerDist(w,id,m.roster_id);M.simPlayers.push({id,rid:m.roster_id,mean:d.mean,sd:d.sd})}
+    M.simPairs=pairs.map(([a,b])=>[a.roster_id,b.roster_id]);
     // specials by simulation: top and lowest team, biggest blowout, top scoring player
     const rids=Object.keys(dists).map(Number),N=6000,hi={},lo={},bl={};rids.forEach(r=>{hi[r]=0;lo[r]=0});
     const mks=M.games.map(g=>g.mk);mks.forEach(k=>bl[k]=0);
@@ -106,19 +108,27 @@ function legLabel(l){switch(l.t){
   case'wins':return `${tn(l.rid)} ${l.side==='o'?'over':'under'} ${l.line} regular-season wins`}}
 const legKey=l=>[l.t,l.w,l.rid,l.pid,l.opp,l.a,l.side,l.line,l.yes].join('|');
 
-/* parlay rules: no two legs on the same game line, the same player, the same special or the same team's future,
-   and no player prop combined with a team bet from that player's matchup (they move together) */
-function legTags(l){const w=l.w;switch(l.t){
-  case'ml':case'sp':case'tt':return['m:'+w+':'+mkOf(w,l.rid)];
-  case'tot':return['m:'+w+':'+Math.min(l.a,l.b)];
-  case'pou':return['p:'+w+':'+l.pid,'pm:'+w+':'+mkOf(w,l.rid)];
-  case'pdu':return['p:'+w+':'+l.pid,'p:'+w+':'+l.opp,'pm:'+w+':'+mkOf(w,l.rid)];
-  case'hi':case'lo':case'blow':case'ptop':return['s:'+w+':'+l.t];
-  default:return['f:'+l.t,'fr:'+l.rid]}}
-function conflict(a,b){const A=legTags(a),Bt=legTags(b);
-  for(const x of A)for(const y of Bt){if(x===y&&!x.startsWith('pm:'))return true;if(x.slice(1)===y.slice(2)&&x[0]==='m'&&y.startsWith('pm:'))return true;if(y.slice(1)===x.slice(2)&&y[0]==='m'&&x.startsWith('pm:'))return true}
-  return false}
-function slipOK(){for(let i=0;i<B.slip.length;i++)for(let k=i+1;k<B.slip.length;k++)if(conflict(B.slip[i],B.slip[k]))return false;return true}
+/* Parlays. Legs from the same week are priced together by simulating that week player by player, so a same-game parlay
+   (a player's over plus his team's moneyline, a moneyline plus the total) pays what its real joint chance is worth.
+   Only picks that can't all win together, and two futures on the same team or market, are refused. */
+function futConflict(){const f=B.slip.filter(l=>l.w==null);for(let i=0;i<f.length;i++)for(let k=i+1;k<f.length;k++)if(f[i].rid===f[k].rid||f[i].t===f[k].t)return true;return false}
+function simWeek(M){
+  const p={},t={};for(const r of M.simPairs.flat())t[r]=0;
+  for(const x of M.simPlayers){const v=x.mean+x.sd*gauss();p[x.id]=v;t[x.rid]+=v}
+  return{t,p,st:M.simPlayers.map(x=>x.id),pairs:M.simPairs};
+}
+function priceParlay(legs){
+  const ind=legs.reduce((x,l)=>x*l.d,1);const wl=legs.filter(l=>l.w!=null);const M=S.bookM;
+  if(wl.length<2||!M||!M.simPlayers||wl.some(l=>l.w!==M.w))return{d:ind,factor:1,impossible:false};
+  const N=8000,marg=wl.map(()=>0);let joint=0;
+  for(let n=0;n<N;n++){const W=simWeek(M);let all=true;wl.forEach((l,i)=>{const o=legOutcome(l,W);if(o==='win')marg[i]++;else all=false});if(all)joint++}
+  const pj=joint/N,pi=marg.reduce((x,m)=>x*Math.max(m,1)/N,1);
+  if(pj<.002)return{d:ind,factor:0,impossible:true};
+  const factor=Math.min(4,Math.max(.25,pj/pi));
+  return{d:Math.max(1.01,Math.round(ind/factor*100)/100),factor,impossible:false};
+}
+let parlayCache={key:'',v:null};
+function parlayPrice(){const k=B.slip.map(legKey).join('#');if(parlayCache.key!==k)parlayCache={key:k,v:priceParlay(B.slip)};return parlayCache.v}
 
 /* ---------- settlement from real Sleeper data ---------- */
 function weekPts(w){const t={},p={},st=[];(S.mu[w]||[]).forEach(m=>{t[m.roster_id]=m.points||0;Object.assign(p,m.players_points||{});(m.starters||[]).forEach(id=>{if(id&&id!=='0')st.push(id)})});return{t,p,st}}
@@ -126,18 +136,22 @@ function standingsFinal(){if(S.week<=S.regEnd||!weekDone(S.regEnd))return null;
   const rec={};S.teams.forEach(t=>rec[t.rid]={w:0,pf:0});
   for(let w=1;w<=S.regEnd;w++)pairsOf(S.mu[w]).forEach(([a,b])=>{rec[a.roster_id].pf+=a.points||0;rec[b.roster_id].pf+=b.points||0;if(a.points>b.points)rec[a.roster_id].w++;else if(b.points>a.points)rec[b.roster_id].w++;else{rec[a.roster_id].w+=.5;rec[b.roster_id].w+=.5}});
   return{order:S.teams.map(t=>t.rid).sort((x,y)=>rec[y].w-rec[x].w||rec[y].pf-rec[x].pf),rec}}
+/* W = {t:{roster:points}, p:{player:points}, st:[starters], pairs:[[roster,roster]]} from real results or one simulated week */
+function legOutcome(l,W){
+  const cmp=(x,y)=>x>y?'win':x<y?'loss':'push',pts=W.t,opp=r=>{const p=W.pairs.find(x=>x.includes(r));return p?p.find(x=>x!==r):r};
+  switch(l.t){case'ml':return cmp(pts[l.rid],pts[opp(l.rid)]);
+    case'sp':return cmp(pts[l.rid]+l.line,pts[l.opp]);
+    case'tot':{const T=pts[l.a]+pts[l.b];return l.side==='o'?cmp(T,l.line):cmp(l.line,T)}
+    case'tt':return l.side==='o'?cmp(pts[l.rid],l.line):cmp(l.line,pts[l.rid]);
+    case'pou':{const v=W.p[l.pid];if(v==null)return'push';return l.side==='o'?cmp(v,l.line):cmp(l.line,v)}
+    case'pdu':{const x=W.p[l.pid],y=W.p[l.opp];if(x==null||y==null)return'push';return cmp(x,y)}
+    case'ptop':{let mx=-1e9;for(const id of W.st){const v=W.p[id]||0;if(v>mx)mx=v}return W.st.includes(l.pid)&&(W.p[l.pid]||0)===mx?'win':'loss'}
+    case'hi':case'lo':{const v=Object.values(pts),x=l.t==='hi'?Math.max(...v):Math.min(...v);return pts[l.rid]===x?'win':'loss'}
+    case'blow':{let bk=null,bm=-1;W.pairs.forEach(([a,b])=>{const m=Math.abs((pts[a]||0)-(pts[b]||0));if(m>bm){bm=m;bk=Math.min(a,b)}});return bk===Math.min(l.a,l.b)?'win':'loss'}}
+  return null}
 function settleLeg(l){
   const cmp=(x,y)=>x>y?'win':x<y?'loss':'push';
-  if(l.w!=null){if(!weekDone(l.w))return null;const W=weekPts(l.w),pts=W.t;
-    switch(l.t){case'ml':return cmp(pts[l.rid],pts[oppOf(l.w,l.rid)]);
-      case'sp':return cmp(pts[l.rid]+l.line,pts[l.opp]);
-      case'tot':{const T=pts[l.a]+pts[l.b];return l.side==='o'?cmp(T,l.line):cmp(l.line,T)}
-      case'tt':return l.side==='o'?cmp(pts[l.rid],l.line):cmp(l.line,pts[l.rid]);
-      case'pou':{const v=W.p[l.pid];if(v==null)return'push';return l.side==='o'?cmp(v,l.line):cmp(l.line,v)}
-      case'pdu':{const x=W.p[l.pid],y=W.p[l.opp];if(x==null||y==null)return'push';return cmp(x,y)}
-      case'ptop':{const mx=Math.max(...W.st.map(id=>W.p[id]||0));return W.st.includes(l.pid)&&(W.p[l.pid]||0)===mx?'win':'loss'}
-      case'hi':case'lo':{const v=Object.values(pts),x=l.t==='hi'?Math.max(...v):Math.min(...v);return pts[l.rid]===x?'win':'loss'}
-      case'blow':{let bk=null,bm=-1;pairsOf(S.mu[l.w]).forEach(([a,b])=>{const m=Math.abs((a.points||0)-(b.points||0));if(m>bm){bm=m;bk=Math.min(a.roster_id,b.roster_id)}});return bk===Math.min(l.a,l.b)?'win':'loss'}}}
+  if(l.w!=null){if(!weekDone(l.w))return null;const W=weekPts(l.w);W.pairs=pairsOf(S.mu[l.w]).map(([a,b])=>[a.roster_id,b.roster_id]);return legOutcome(l,W)}
   const F=standingsFinal(),st=F&&F.order;const nPO=Math.min(S.league.settings.playoff_teams||6,S.teams.length);
   switch(l.t){
     case'seed1':return st?(st[0]===l.rid?'win':'loss'):null;
@@ -145,10 +159,10 @@ function settleLeg(l){
     case'po':return st?((st.indexOf(l.rid)<nPO)===l.yes?'win':'loss'):null;
     case'wins':return F?(l.side==='o'?cmp(F.rec[l.rid].w,l.line):cmp(l.line,F.rec[l.rid].w)):null;
     case'champ':{const f=(S.wb||[]).find(m=>m.p===1&&m.w);return f?(f.w===l.rid?'win':'loss'):(st&&st.indexOf(l.rid)>=nPO?'loss':null)}
-    case'toilet':{const f=(S.lb||[]).find(m=>m.p===1&&m.l);return f?(f.l===l.rid?'win':'loss'):(st&&st.indexOf(l.rid)<nPO?'loss':null)}}
+    case'toilet':{const t=bracketResult(S.wb,S.lb,S.mu,(S.league.settings||{}).playoff_week_start||15).toilet;return t?(t===l.rid?'win':'loss'):(st&&st.indexOf(l.rid)<nPO?'loss':null)}}
   return null}
 function settleBet(b){const r=b.legs.map(settleLeg);if(r.includes('loss'))return{st:'loss',pay:0,r};if(r.includes(null))return{st:'open',r};
-  const d=b.legs.reduce((x,l,i)=>x*(r[i]==='push'?1:l.d),1);return{st:r.every(x=>x==='push')?'push':'win',pay:b.stake*d,r}}
+  const d=(b.pd||b.legs.reduce((x,l)=>x*l.d,1))/b.legs.reduce((x,l,i)=>x*(r[i]==='push'?l.d:1),1);return{st:r.every(x=>x==='push')?'push':'win',pay:b.stake*Math.max(1,d),r}}
 function ledger(){const d=bkLoad();let bank=d.bank,won=0,lost=0,open=0,pl=0,staked=0;
   const rows=d.bets.map(b=>{const s=settleBet(b);staked+=b.stake;if(s.st==='open'){bank-=b.stake;open++}else{bank+=s.pay-b.stake;pl+=s.pay-b.stake;if(s.st==='win')won++;if(s.st==='loss')lost++}return{b,...s}});
   return{d,bank,won,lost,open,pl,staked,rows}}
@@ -169,7 +183,7 @@ function rBook(){
   <nav class="chips bk-secs" aria-label="Sportsbook sections">${SECS.map(([k,l])=>`<button class="chip" data-sec="${k}" aria-pressed="${B.sec===k}">${l}${k==='mine'&&LG.open?` (${LG.open})`:''}</button>`).join('')}</nav>`;
   const body={games:bkGames,props:bkProps,specials:bkSpecials,futures:bkFutures,mine:bkMine}[B.sec](M,LG);
   return `${hdr}<div class="bk-layout"><div>${body}</div><aside id="slip">${rSlip(LG.bank)}</aside></div>
-  ${B.slip.length?`<a class="bk-float" href="#slip">Bet slip, ${B.slip.length} ${B.slip.length>1?'picks':'pick'}</a>`:''}`;
+  ${B.slip.length?`<a class="bk-float" id="bkFloat" href="#slip">${floatText()}</a>`:''}`;
 }
 const noWeek=`<div class="panel">No weekly matchups left to bet on this season. Futures are still open.</div>`;
 function bkGames(M){
@@ -217,7 +231,7 @@ function bkFutures(M){
 function bkMine(M,LG){
   if(!LG.rows.length)return `<div class="panel" style="margin-top:14px">No bets yet. Pick any odds to start a bet slip.</div>`;
   return `<div class="panel scroll" style="margin-top:14px"><table><thead><tr><th>Bet</th><th class="r">Stake</th><th class="r">Odds</th><th>Status</th><th class="r">Return</th></tr></thead><tbody>
-    ${[...LG.rows].reverse().map(r=>{const d=r.b.legs.reduce((x,l)=>x*l.d,1);const st={open:'Open',win:'Won',loss:'Lost',push:'Push'}[r.st];
+    ${[...LG.rows].reverse().map(r=>{const d=r.b.pd||r.b.legs.reduce((x,l)=>x*l.d,1);const st={open:'Open',win:'Won',loss:'Lost',push:'Push'}[r.st];
       return `<tr><td>${r.b.legs.length>1?`<b>${r.b.legs.length}-leg parlay</b><div class="psub">${r.b.legs.map((l,i)=>h(legLabel(l))+(r.r[i]?` <span class="${r.r[i]==='win'?'up':r.r[i]==='loss'?'down':''}">(${r.r[i]})</span>`:'')).join('<br>')}</div>`:h(legLabel(r.b.legs[0]))}</td>
       <td class="r num">${f0(r.b.stake)}</td><td class="r num">${oddsTxt(d)}</td><td><span class="tag ${r.st==='win'?'good':r.st==='loss'?'bad':''}">${st}</span></td>
       <td class="r num">${r.st==='open'?f0(r.b.stake*d)+' to return':f0(r.pay)}</td></tr>`}).join('')}</tbody></table></div>
@@ -225,20 +239,23 @@ function bkMine(M,LG){
 }
 function rSlip(bank){
   if(!B.slip.length)return `<div class="panel"><h3 style="margin-top:0">Bet slip</h3><p class="mute" style="margin:0">Tap any odds to add a pick. Add two or more for a parlay.</p>${B.msg?`<p class="up" style="margin:8px 0 0">${h(B.msg)}</p>`:''}</div>`;
-  const multi=B.slip.length>1,ok=slipOK(),parlay=multi&&B.mode==='parlay';
-  const pd=B.slip.reduce((x,l)=>x*l.d,1),stake=Math.max(0,Number(B.stake)||0);
+  const multi=B.slip.length>1,parlay=multi&&B.mode==='parlay';
+  const PP=parlay?parlayPrice():{d:B.slip.reduce((x,l)=>x*l.d,1),factor:1,impossible:false},pd=PP.d,stake=Math.max(0,Number(B.stake)||0);
+  const fc=parlay&&futConflict();
   const total=parlay?stake:stake*B.slip.length,ret=parlay?stake*pd:B.slip.reduce((s,l)=>s+stake*l.d,0);
-  const err=parlay&&!ok?'Some of these picks depend on each other (same game, same player, or a player and his own matchup), so they can’t share a parlay. Remove one or bet them as singles.':total>bank?'Not enough chips for that stake.':stake<=0?'Enter a stake.':'';
+  const err=parlay&&PP.impossible?'These picks can\u2019t all win together. Remove one of them.':fc?'Two futures on the same team or the same market can\u2019t share a parlay. Bet them as singles.':total>bank?'Not enough chips for that stake.':stake<=0?'Enter a stake.':'';
   return `<div class="panel"><h3 style="margin-top:0">Bet slip</h3>
    ${multi?`<div class="chips" style="margin-bottom:10px"><button class="chip" data-bm="parlay" aria-pressed="${B.mode==='parlay'}">Parlay</button><button class="chip" data-bm="single" aria-pressed="${B.mode==='single'}">Singles</button></div>`:''}
    ${B.slip.map((l,i)=>`<div class="bk-leg"><div>${h(legLabel(l))}<div class="num psub">${oddsTxt(l.d)}</div></div><button class="bk-x" data-rm="${i}" aria-label="Remove pick">×</button></div>`).join('')}
-   ${parlay?`<div class="bk-leg"><b>${B.slip.length}-leg parlay</b><b class="num">${oddsTxt(pd)}</b></div>`:''}
+   ${parlay?`<div class="bk-leg"><span><b>${B.slip.length}-leg parlay</b>${Math.abs(PP.factor-1)>.06&&!PP.impossible?`<div class="psub">These picks move together, so the price is ${PP.factor>1?'shortened':'boosted'} to their real joint chance.</div>`:''}</span><b class="num">${oddsTxt(pd)}</b></div>`:''}
    <label class="bk-stake">${parlay||!multi?'Stake':'Stake per bet'} <input id="bkStake" type="number" min="1" step="10" value="${h(B.stake)}" inputmode="numeric"></label>
    <div class="bk-leg" style="border:0"><span>Total stake</span><b class="num">${f0(total)}</b></div>
    <div class="bk-leg" style="border:0"><span>Potential return</span><b class="num up" id="bkRet">${f0(ret)}</b></div>
    <p class="down" id="bkErr" style="margin:4px 0 8px"${err?'':' hidden'}>${err}</p>
    <div class="row" style="margin:6px 0 0"><button class="btn" id="bkPlace" ${err?'disabled':''}>Place ${parlay||!multi?'bet':B.slip.length+' bets'}</button><button class="btn ghost" id="bkClear">Clear</button></div></div>`;
 }
+function floatText(){const n=B.slip.length;if(!n)return'';const par=n>1&&B.mode==='parlay';const pp=par?parlayPrice():null;
+  return `Bet slip: ${n} ${n>1?'picks':'pick'}${par?(pp.impossible?', can\u2019t all win':`, parlay ${oddsTxt(pp.d)}`):''}. Review and place`}
 function bkRerender(){const y=window.scrollY;render();window.scrollTo(0,y)}
 function refreshSlip(){const LG=ledger();const s=$('#slip');if(s){const f=document.activeElement&&document.activeElement.id==='bkStake';s.innerHTML=rSlip(LG.bank);if(f){const i=$('#bkStake');i.focus();const v=i.value;i.value='';i.value=v}}}
 document.addEventListener('click',e=>{
@@ -252,11 +269,11 @@ document.addEventListener('click',e=>{
   const fm=e.target.closest('[data-fmt]');if(fm){B.fmt=fm.dataset.fmt;store.set('wr_oddsfmt',B.fmt);bkRerender();return}
   if(e.target.id==='bkClear'){B.slip=[];bkRerender();return}
   if(e.target.id==='bkPlace'){const d=bkLoad(),stake=Math.round(Number(B.stake)||0),t=Date.now();
-    const bets=B.slip.length>1&&B.mode==='parlay'?[{id:t,stake,legs:B.slip}]:B.slip.map((l,i)=>({id:t+i,stake,legs:[l]}));
+    const bets=B.slip.length>1&&B.mode==='parlay'?[{id:t,stake,legs:B.slip,pd:parlayPrice().d}]:B.slip.map((l,i)=>({id:t+i,stake,legs:[l]}));
     d.bets.push(...bets.map(b=>({...b,placed:new Date().toISOString()})));bkSave(d);
     B.msg=bets.length>1?`${bets.length} bets placed.`:'Bet placed.';B.slip=[];bkRerender();return}
   if(e.target.id==='bkReset'){if(confirm('Clear all your bets and reset to '+START_BANK+' chips?')){bkSave({bank:START_BANK,bets:[]});bkRerender()}return}
-  if(e.target.id==='bkShare'){const L=ledger();const fmt=r=>{const d=r.b.legs.reduce((x,l)=>x*l.d,1);const st={open:'OPEN',win:'WON',loss:'LOST',push:'PUSH'}[r.st];
+  if(e.target.id==='bkShare'){const L=ledger();const fmt=r=>{const d=r.b.pd||r.b.legs.reduce((x,l)=>x*l.d,1);const st={open:'OPEN',win:'WON',loss:'LOST',push:'PUSH'}[r.st];
       return `${st}: ${r.b.legs.length>1?r.b.legs.length+'-leg parlay: ':''}${r.b.legs.map(legLabel).join(' + ')} | ${f0(r.b.stake)} at ${oddsTxt(d)}${r.st==='open'?` to return ${f0(r.b.stake*d)}`:r.st==='win'?`, paid ${f0(r.pay)}`:''}`};
     const txt=`${tn(S.meRid)} at the ${S.league.name} sportsbook: ${f0(L.bank)} chips, ${L.pl>=0?'+':''}${f0(L.pl)} profit\n`+[...L.rows].reverse().slice(0,15).map(fmt).join('\n');
     const m=$('#bkShareMsg');navigator.clipboard?navigator.clipboard.writeText(txt).then(()=>m.textContent='Copied',()=>m.textContent='Copy blocked here'):m.textContent='Copy blocked here'}
@@ -264,3 +281,5 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{if(e.target.id==='bkMu'){B.pmu=e.target.value;bkRerender()}});
 document.addEventListener('input',e=>{if(e.target.id==='bkStake'){B.stake=e.target.value;refreshSlip()}});
 registerModule({key:'book',label:'Sportsbook',order:80,live:true,render:rBook});
+
+document.addEventListener('wr:reset',()=>{B.slip=[];B.pmu='all';B.msg='';parlayCache={key:'',v:null}});

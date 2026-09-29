@@ -169,3 +169,89 @@ footer{max-width:1200px;margin:0 auto;padding:0 20px 40px;font-size:13px;color:v
 .setup-wrap summary{cursor:pointer;opacity:.85;width:max-content}
 .setup-wrap[open] summary{margin-bottom:4px}
 .fc-board::after{display:none}
+
+/* live: expandable matchups */
+.lv-mu{padding:2px 16px;margin-bottom:10px}
+.lv-mu>summary{list-style:none;cursor:pointer}
+.lv-mu>summary::-webkit-details-marker{display:none}
+.lv-mu .mini{border-bottom:0}
+.lv-mu[open]>summary .mini{border-bottom:1px solid var(--line)}
+.plist tr:last-child td{border-bottom:0}
+
+/* multi-team trades */
+.tl.tl-3,.tl.tl-4{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.tc-a{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap}
+.tc-a:last-child{border-bottom:0}
+.tc-a.on{background:var(--panel2)}
+.tc-a label{display:flex;gap:8px;align-items:center;cursor:pointer;flex:1 1 160px;min-width:0;padding:0;border:0}
+.tc-a select{font-size:13px;padding:4px 6px;max-width:170px}
+.tc-a .v{margin-left:auto;font-family:var(--num);font-size:16px}
+
+/* forecast: outlook cards, slope chart, projected lineups */
+.tag.warn{color:var(--amber);border-color:currentColor;background:transparent}
+.ol-leg{display:flex;gap:10px;align-items:baseline;padding:4px 0}
+.ol-leg .tag{flex:none;min-width:150px;text-align:center}
+.ol-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}
+.ol-card.ol-me{border:2px solid var(--amber)}
+.ol-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.ol-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ol-n{font-size:24px;font-weight:600;line-height:1.1}.ol-n .mute{font-size:16px}
+.ol-list{margin:12px 0 0;padding-left:18px;font-size:15px}.ol-list li{margin:0 0 6px}
+.ol-advice{margin:10px 0 0;padding:10px 12px;background:var(--panel2);border-radius:8px;font-size:15px}
+.sl-wrap{position:relative;overflow-x:auto}
+.slope{width:100%;min-width:560px;height:auto;display:block}
+.sl-yr{font-family:var(--num);font-weight:600;font-size:16px;fill:var(--ink)}
+.sl-rk{font-family:var(--num);font-size:13px;fill:var(--mute)}
+.sl-ax{stroke:var(--line);stroke-width:1}
+.sl-line{fill:none;stroke:var(--mute);stroke-width:2;opacity:.55;stroke-linejoin:round}
+.sl-dot{fill:var(--mute);stroke:var(--panel);stroke-width:2;opacity:.8}
+.sl-lab{font-size:13px;fill:var(--mute)}
+.sl-hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
+.sl-me .sl-line{stroke:var(--amber);stroke-width:3.5;opacity:1}.sl-me .sl-dot{fill:var(--amber);opacity:1}.sl-me .sl-lab{fill:var(--ink);font-weight:700}
+.sl-g:focus{outline:none}.sl-g:focus .sl-line,.sl-g:hover .sl-line{stroke:var(--ink);opacity:1;stroke-width:3}
+.sl-g:focus .sl-lab,.sl-g:hover .sl-lab{fill:var(--ink);font-weight:700}
+.sl-g.sl-dim{opacity:.25}
+.sl-tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:13px;line-height:1.35;padding:6px 9px;border-radius:6px;max-width:320px;z-index:2}
+.fc-lu{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+@media (max-width:520px){.ol-stats{grid-template-columns:1fr 1fr}.ol-leg{flex-direction:column;gap:2px}.ol-leg .tag{min-width:0}}
+
+/* sign-in, league picker, account bar */
+.acct{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:14px}
+.acct:empty{display:none}
+.acct-user{opacity:.9;font-weight:600}
+.acct select{background:rgba(255,255,255,.1);color:var(--fieldink);border:1px solid var(--chalkline);border-radius:6px;padding:5px 8px;max-width:260px}
+.acct select option{color:#10251A}
+.acct-btn{background:none;border:1px solid var(--chalkline);color:var(--fieldink);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:14px}
+.signin{max-width:560px;padding:10px 0 30px}
+.signin-form label{font-weight:600}
+.signin-form input{flex:1 1 220px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:17px}
+.signin-form .btn{padding:10px 16px}
+.lg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.lg-card{display:flex;gap:12px;align-items:center;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;width:100%}
+.lg-card:hover{border-color:var(--ink)}
+.lg-card img,.lg-ph{width:48px;height:48px;border-radius:50%;flex:none;background:var(--field);object-fit:cover}
+
+/* history */
+.hx-trophies{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.hx-tro{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:start}
+.hx-tro>div:not(.hx-yr){grid-column:2}
+.hx-yr{grid-row:1/4;font-size:34px;font-weight:700;color:var(--amber);line-height:1}
+.hx-recs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.hx-rec{display:flex;flex-direction:column;gap:2px}
+.hx-big{font-size:28px;font-weight:700;line-height:1.1;margin-top:4px}
+.hx-podium{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:6px}
+.hx-p1{border:2px solid var(--amber)}
+.hx-toilet{border:2px dashed var(--red)}
+.hx-trade{margin-bottom:12px}
+.hx-sides{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:8px}
+.hx-sides ul{margin:4px 0 6px;padding-left:18px;font-size:15px}
+.hx-sides>div{padding:8px 10px;border-radius:8px;background:var(--panel2)}
+.hx-sides>div.hx-win{outline:2px solid var(--mint)}
+
+/* gazette language picker */
+.gz-lang{position:relative}
+.gz-lang>summary{list-style:none;display:inline-block}
+.gz-lang>summary::-webkit-details-marker{display:none}
+.gz-lang-pop{position:absolute;z-index:6;top:calc(100% + 6px);left:0;width:min(560px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.gz-lang-pop input{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.paper[dir="rtl"] .cols{direction:rtl}

@@ -9,8 +9,8 @@ function rNews(){
     ${a.description?`<p style="margin:4px 0 0">${h(a.description)}</p>`:''}</div>`};
   const mine=tagged.filter(x=>x.hits.some(id=>names[id].t.rid===S.meRid));
   return `<h2>Injury report</h2><p class="lede">Every rostered player carrying an injury designation on Sleeper, your team first.</p>
-  <div class="panel scroll"><table><thead><tr><th>Player</th><th>Status</th><th>Team in league</th><th class="r">This week</th></tr></thead><tbody>
-  ${inj.map(x=>`<tr class="${x.t.rid===S.meRid?'me':''}"><td>${pcell(x.id)}</td><td>${h(S.P[x.id].inj)}${S.P[x.id].body?', '+h(S.P[x.id].body):''}</td><td>${h(x.t.name)}</td><td class="r num">${f1(wk(x.id))}</td></tr>`).join('')||'<tr><td>No notable injuries.</td></tr>'}</tbody></table></div>
+  <div class="panel scroll"><table><thead><tr><th>Player</th><th>Status</th><th>Team in league</th><th class="r">Week ${S.planWeek}</th></tr></thead><tbody>
+  ${inj.map(x=>`<tr class="${x.t.rid===S.meRid?'me':''}"><td>${pcell(x.id)}</td><td>${h(S.P[x.id].inj)}${S.P[x.id].body?', '+h(S.P[x.id].body):''}</td><td>${h(x.t.name)}</td><td class="r num">${f1(wkPlan(x.id))}</td></tr>`).join('')||'<tr><td>No notable injuries.</td></tr>'}</tbody></table></div>
   ${mine.length?`<h2>About your players</h2><div class="panel">${mine.map(art).join('')}</div>`:''}
   <h2>NFL headlines</h2><div class="panel">${S.news.length?tagged.map(art).join(''):'<p class="mute">Headlines could not load.</p>'}</div>`;
 }

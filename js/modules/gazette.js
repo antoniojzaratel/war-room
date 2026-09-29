@@ -41,7 +41,7 @@ const LINES={
    dud:[x=>`${nm(x.dud.id)} aportó ${f1(x.dud.p)}, lo cual ya es mucho decir.`,x=>`${nm(x.dud.id)} (${f1(x.dud.p)}) jugó como si le debieran la quincena.`],
    bench:x=>`Dejó ${f1(x.bench)} puntos en la banca.`,
    rec:x=>x.rec.l===0?`Va ${x.rec.w}-0, invicto y cada vez más insoportable.`:x.rec.w===0?`Va 0-${x.rec.l} y sigue buscando su primera W, como quien busca estacionamiento en San Pedro un sábado.`:`Récord de ${x.rec.w}-${x.rec.l}.`},
-  s:{best:'El mejor de la semana',worst:'El sótano',blow:'Masacre',close:'Infarto',bench:'El director técnico',lucky:'Robo a mano armada',unlucky:'La injusticia',moves:'Mercado',caps:'Equipo por equipo',stand:'Tabla',week:'Semana',edition:'Edición'}},
+  s:{of:'de',live:'En vivo',best:'El mejor de la semana',worst:'El sótano',blow:'Masacre',close:'Infarto',bench:'El director técnico',lucky:'Robo a mano armada',unlucky:'La injusticia',moves:'Mercado',caps:'Equipo por equipo',stand:'Tabla',week:'Semana',edition:'Edición'}},
  en:{
   head:[f=>`${f.top.t.name} drops ${f1(f.top.pts)} and the league asks for mercy`,f=>`Sunday massacre: ${f.top.t.name} posts ${f1(f.top.pts)} and nobody can stop it`,f=>`${f.top.t.name} dresses up for ${f1(f.top.pts)}; everyone else wears black`],
   deck:[f=>`Meanwhile ${f.low.t.name} put up ${f1(f.low.pts)} and emergency services have been notified. All that and more in the week ${f.w} edition.`,f=>`In the basement, ${f.low.t.name} (${f1(f.low.pts)}) keeps proving that owning a roster is not the same as having a team.`],
@@ -62,7 +62,7 @@ const LINES={
    dud:[x=>`${nm(x.dud.id)} chipped in ${f1(x.dud.p)}, which is generous.`,x=>`${nm(x.dud.id)} (${f1(x.dud.p)}) played like he's owed back pay.`],
    bench:x=>`Left ${f1(x.bench)} points on the bench.`,
    rec:x=>x.rec.l===0?`Now ${x.rec.w}-0, unbeaten and increasingly unbearable.`:x.rec.w===0?`Now 0-${x.rec.l} and still hunting the first W.`:`Record: ${x.rec.w}-${x.rec.l}.`},
-  s:{best:'Team of the week',worst:'The basement',blow:'Massacre',close:'Heart attack',bench:'The head coach',lucky:'Daylight robbery',unlucky:'The injustice',moves:'Market',caps:'Team by team',stand:'Standings',week:'Week',edition:'Edition'}}};
+  s:{of:'of',live:'Live',best:'Team of the week',worst:'The basement',blow:'Massacre',close:'Heart attack',bench:'The head coach',lucky:'Daylight robbery',unlucky:'The injustice',moves:'Market',caps:'Team by team',stand:'Standings',week:'Week',edition:'Edition'}}};
 function writePaper(f,lang){
   const L=LINES[lang],r=rng(Number(S.leagueId.slice(-6))+f.w*97+(lang==='es'?1:2)),pick=a=>a[Math.floor(r()*a.length)];
   const stories=[{h:L.s.worst,b:pick(L.low)(f)},{h:L.s.blow,b:L.blow(f)},{h:L.s.close,b:L.close(f)}];
@@ -81,14 +81,17 @@ function rPaper(){
   const weeks=range(1,S.week).filter(w=>(S.mu[w]||[]).some(m=>m.points>0));
   if(!weeks.length)return `<h2>Gazette</h2><p class="lede">The first edition prints once week 1 has points on the board.</p>`;
   if(!S.gzWeek||!weeks.includes(S.gzWeek))S.gzWeek=weeks.filter(w=>w<S.week).pop()||weeks[weeks.length-1];
-  const f=weekFacts(S.gzWeek);const lang=S.lang;const live=S.gzWeek===S.week;
-  const P=S.aiPaper[S.gzWeek+lang]||writePaper(f,lang);const L=LINES[lang].s;
+  const f=weekFacts(S.gzWeek);const lang=S.lang||'es';const live=S.gzWeek===S.week;const native=!!LINES[lang];
+  let P,L,trNote='';
+  if(S.aiPaper[S.gzWeek+lang]){P=S.aiPaper[S.gzWeek+lang];L=(LINES[lang]||LINES.en).s}
+  else if(native){P=writePaper(f,lang);L=LINES[lang].s}
+  else{const T=gzTranslated(f,lang);P=T.P;L=T.L;trNote=T.note}
   const ctrl=`<div class="row"><select id="gzWeek" aria-label="Week">${weeks.map(w=>`<option value="${w}" ${w===S.gzWeek?'selected':''}>${L.week} ${w}${w===S.week?' (live)':''}</option>`).join('')}</select>
-   <div class="chips"><button class="chip" data-lang="es" aria-pressed="${lang==='es'}">Español</button><button class="chip" data-lang="en" aria-pressed="${lang==='en'}">English</button></div>
-   <button class="btn ghost" id="btnCopy">Copy for the group chat</button><button class="btn" id="btnAI" hidden>Have Claude write a sharper edition</button><span id="aiMsg" class="mute"></span></div>`;
+   ${langPicker(lang)}
+   <button class="btn ghost" id="btnCopy">Copy for the group chat</button><button class="btn" id="btnAI" hidden>Have Claude write a sharper edition</button><span id="aiMsg" class="mute"></span></div>${trNote?`<p class="psub" style="margin:0 0 12px">${trNote}</p>`:''}`;
   return `<h2>The weekly roast</h2><p class="lede">Every storyline comes from real results: scores, margins, bench points left behind, lucky wins, trades and waiver moves.</p>${ctrl}
-  <article class="paper" id="paperBody">
-    <header class="mast"><div class="name">El Pasquín</div><div class="sub">${h(S.league.name)}, ${L.week.toLowerCase()} ${f.w} de ${S.season}${live?` <span class="stamp">${lang==='es'?'En vivo':'Live'}</span>`:''}</div></header>
+  <article class="paper" id="paperBody" lang="${h(lang)}" dir="${/^(ar|he|fa|ur)/.test(lang)?'rtl':'ltr'}">
+    <header class="mast"><div class="name">El Pasquín</div><div class="sub">${h(S.league.name)}, ${h(L.week.toLowerCase())} ${f.w} ${h(L.of||'')} ${S.season}${live?` <span class="stamp">${h(L.live||'Live')}</span>`:''}</div></header>
     <h3 class="lead">${h(P.headline)}</h3><p class="deck">${h(P.deck)}</p>
     <div class="cols">${P.stories.map(s=>`<div class="story"><h4>${h(s.h)}</h4><p>${h(s.b)}</p></div>`).join('')}</div>
     <section class="caps"><h4 style="font-family:Anton,Impact,sans-serif;font-weight:400;font-size:30px;margin:0">${L.caps}</h4>
@@ -105,14 +108,62 @@ async function aiEdition(){
   const facts={league:S.league.name,week:f.w,results:f.games.map(g=>({winner:g.W.t.name,winner_pts:g.W.pts,loser:g.L.t.name,loser_pts:g.L.pts})),
     teams:f.all.map(x=>({team:x.t.name,manager:x.t.handle,pts:x.pts,won:x.won,record:`${x.rec.w}-${x.rec.l}`,bench_points_left:Math.round(x.bench*10)/10,best_starter:x.star&&{name:nm(x.star.id),pts:x.star.p},worst_starter:x.dud&&{name:nm(x.dud.id),pts:x.dud.p},best_benched:x.benchStar&&{name:nm(x.benchStar.id),pts:x.benchStar.p},teams_outscored:x.beat})),
     trades:f.trades.map(t=>(t.roster_ids||[]).map(id=>S.byRid[id]&&S.byRid[id].name)),waiver_moves:f.adds&&Object.fromEntries(Object.entries(f.adds).map(([k,v])=>[S.byRid[k]?S.byRid[k].name:k,v]))};
-  const prompt=`You write a savage but friendly satirical fantasy football newspaper for a group of friends${lang==='es'?' in Monterrey, Mexico. Write in Mexican Spanish, casual, witty, no slurs, no insults about real-life traits':' . Write in English, witty, no slurs, no insults about real-life traits'}. Roast everyone using ONLY these facts; never invent scores or players.\nFACTS: ${JSON.stringify(facts)}\nReturn ONLY JSON: {"headline":string,"deck":string,"stories":[{"h":string,"b":string}] (5-7 stories, 2-4 sentences each),"caps":[{"name":team name,"handle":manager,"pts":number,"body":2-3 sentence roast}] (one per team, ordered by points)}`;
+  const prompt=`You write a savage but friendly satirical fantasy football newspaper for a group of friends. Write in ${lang==='es'?'Mexican Spanish':langName(lang)}, casual and witty, no slurs, no insults about real-life traits. Roast everyone using ONLY these facts; never invent scores or players.\nFACTS: ${JSON.stringify(facts)}\nReturn ONLY JSON: {"headline":string,"deck":string,"stories":[{"h":string,"b":string}] (5-7 stories, 2-4 sentences each),"caps":[{"name":team name,"handle":manager,"pts":number,"body":2-3 sentence roast}] (one per team, ordered by points)}`;
   try{const out=await s.json(prompt,{modelTier:'default'});if(out&&out.headline){S.aiPaper[S.gzWeek+lang]=out;render()}else msg.textContent='The edition came back empty. Try again.'}
   catch(e){msg.textContent=e&&e.code==='rate_limited'?'Too many requests. Wait a minute and retry.':e&&e.code==='not_granted'?'Permission was not granted.':'Could not write the edition this time.';btn.disabled=false}
 }
 
 document.addEventListener('change',e=>{if(e.target.id==='gzWeek'){S.gzWeek=Number(e.target.value);render()}});
 document.addEventListener('click',e=>{
-  const lg=e.target.closest('[data-lang]');if(lg){S.lang=lg.dataset.lang;store.set('wr_lang',S.lang);render()}
+  const lg=e.target.closest('[data-lang]');if(lg){setLang(lg.dataset.lang);return}
+  if(e.target.id==='gzLangGo'){const v=($('#gzLangCode').value||'').trim();if(v)setLang(v)}
   if(e.target.id==='btnCopy'){const txt=$('#paperBody').innerText;navigator.clipboard&&navigator.clipboard.writeText(txt).then(()=>{e.target.textContent='Copied'},()=>{e.target.textContent='Copy blocked here'})}
   if(e.target.id==='btnAI')aiEdition();});
 registerModule({key:'paper',label:'Gazette',order:90,render:rPaper,after(){getSample().then(s=>{const b=$('#btnAI');if(b&&s)b.hidden=false})}});
+
+/* ============ Language: any language for the Gazette ============ */
+const LANGS=[['es','Español'],['en','English'],['pt','Português'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['nl','Nederlands'],['pl','Polski'],['sv','Svenska'],['da','Dansk'],['no','Norsk'],['fi','Suomi'],['tr','Türkçe'],['el','Ελληνικά'],['ru','Русский'],['uk','Українська'],['ro','Română'],['ca','Català'],['ar','العربية'],['he','עברית'],['hi','हिन्दी'],['ja','日本語'],['ko','한국어'],['zh-CN','中文 (简体)'],['zh-TW','中文 (繁體)'],['vi','Tiếng Việt'],['th','ไทย'],['id','Bahasa Indonesia'],['ms','Bahasa Melayu'],['tl','Tagalog'],['sw','Kiswahili']];
+function langName(code){const k=LANGS.find(x=>x[0].toLowerCase()===String(code).toLowerCase());if(k)return k[1];try{return new Intl.DisplayNames(['en'],{type:'language'}).of(code)||code}catch(e){return code}}
+function langPicker(lang){
+  return `<details class="gz-lang"><summary class="btn ghost">Language: ${h(langName(lang))}</summary>
+    <div class="gz-lang-pop"><div class="chips">${LANGS.map(([k,n])=>`<button class="chip" data-lang="${k}" aria-pressed="${k===lang}" lang="${k}">${h(n)}</button>`).join('')}</div>
+    <div class="row" style="margin:10px 0 0"><label class="psub" for="gzLangCode">Another language (code like "gu" or "pa")</label><input id="gzLangCode" size="8" autocapitalize="none" spellcheck="false"><button class="btn ghost" id="gzLangGo" type="button">Use it</button></div>
+    <p class="psub" style="margin:8px 0 0">Español and English are written natively. Other languages are machine-translated from the English edition, and names are kept as they are.</p></div></details>`;
+}
+function setLang(code){S.lang=code;store.set('wr_lang',code);render()}
+const GZTR={};
+function hashStr(s){let x=2166136261;for(let i=0;i<s.length;i++){x^=s.charCodeAt(i);x=Math.imul(x,16777619)}return (x>>>0).toString(36)}
+/* build the English edition, shield names behind [n] tokens, translate, restore */
+function gzTranslated(f,lang){
+  const P=writePaper(f,'en'),Ls=LINES.en.s;
+  const names=[...new Set([...S.teams.flatMap(t=>[t.name,t.handle]),...f.all.flatMap(x=>[x.star,x.dud,x.benchStar].filter(Boolean).map(y=>nm(y.id))),S.league.name].filter(n=>n&&n.length>1))].sort((a,b)=>b.length-a.length);
+  const shield=s=>{let o=String(s);names.forEach((n,i)=>{o=o.split(n).join(`[${i}]`)});return o};
+  const unshield=s=>String(s).replace(/\[\s*(\d+)\s*\]/g,(m,i)=>names[Number(i)]??m);
+  const src=[P.headline,P.deck,...P.stories.flatMap(s=>[s.h,s.b]),...P.caps.map(c=>c.body),Ls.week,Ls.of,Ls.live,Ls.caps,Ls.stand].map(shield);
+  const key=`wr_gz_${lang}_${hashStr(src.join('␞'))}`;
+  let done=GZTR[key];if(!done){try{const c=JSON.parse(store.get(key)||'null');if(c&&c.length===src.length)done=GZTR[key]=c}catch(e){}}
+  if(!done&&!GZTR[key+'_busy']){GZTR[key+'_busy']=true;translateAll(src,lang).then(out=>{GZTR[key]=out;store.set(key,JSON.stringify(out));delete GZTR[key+'_busy'];if(S.tab==='paper')render()}).catch(err=>{GZTR[key+'_err']=err.message||String(err);delete GZTR[key+'_busy'];if(S.tab==='paper')render()})}
+  if(!done){const err=GZTR[key+'_err'];return{P,L:Ls,note:err?`Couldn't translate to ${h(langName(lang))}: ${h(err)} Showing English.`:`Translating to ${h(langName(lang))}… Showing English until it's ready.`}}
+  let i=0;const t=()=>unshield(done[i++]);
+  const TP={headline:t(),deck:t(),stories:P.stories.map(()=>({h:t(),b:t()})),caps:P.caps.map(c=>({...c,body:t()}))};
+  const TL={...Ls,week:t(),of:t(),live:t(),caps:t(),stand:t()};
+  return{P:TP,L:TL,note:`Machine-translated to ${h(langName(lang))}.`};
+}
+async function translateAll(list,lang){
+  const cfg=(CONFIG.translate||{provider:'mymemory'});const out=new Array(list.length);let next=0,firstErr=null;
+  const one=async s=>{
+    if(!s||!s.trim())return s;
+    if(cfg.provider==='libretranslate'){const r=await fetch(cfg.url.replace(/\/$/,'')+'/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:s,source:'en',target:lang.split('-')[0],format:'text',api_key:cfg.key||undefined})});if(!r.ok)throw new Error('Translation service returned '+r.status+'.');return (await r.json()).translatedText}
+    if(cfg.provider==='proxy'){const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:s,source:'en',target:lang})});if(!r.ok)throw new Error('Translation service returned '+r.status+'.');const d=await r.json();return d.text||d.translatedText}
+    // MyMemory: free, no key, about 5,000 characters a day per visitor (50,000 with an email in config)
+    const parts=s.length<=480?[s]:s.match(/[^.!?]+[.!?]*\s*/g).reduce((a,x)=>{if(a.length&&(a[a.length-1]+x).length<=480)a[a.length-1]+=x;else a.push(x);return a},[]);
+    const res=[];for(const p of parts){const u=`https://api.mymemory.translated.net/get?q=${encodeURIComponent(p)}&langpair=en|${encodeURIComponent(lang)}${cfg.email?'&de='+encodeURIComponent(cfg.email):''}`;
+      const r=await fetch(u);if(!r.ok)throw new Error('Translation service returned '+r.status+'.');const d=await r.json();const txt=d&&d.responseData&&d.responseData.translatedText;
+      if(!txt||Number(d.responseStatus)!==200||/MYMEMORY WARNING/i.test(txt))throw new Error(/QUOTA|WARNING/i.test(String(txt)+String(d.responseDetails))?'The free daily translation quota on this device is used up. Try again tomorrow.':'The translation service refused this language code.');
+      res.push(txt)}
+    return res.join(' ');
+  };
+  const worker=async()=>{while(next<list.length&&!firstErr){const i=next++;try{out[i]=await one(list[i])}catch(e){firstErr=e}}};
+  await Promise.all([worker(),worker(),worker(),worker()]);
+  if(firstErr)throw firstErr;return out;
+}

@@ -11,8 +11,8 @@ function rWire(){
   const chips=['ALL',...POS.filter(p=>used.has(p))].map(p=>`<button class="chip" data-wp="${p}" aria-pressed="${S.wvPos===p}">${p==='ALL'?'All':p}</button>`).join('');
   return `<h2>Waiver wire</h2><p class="lede">Unrostered players in your league ranked by projected points over the next four weeks. The trend column is how many Sleeper leagues added them in the last 48 hours.</p>
   <div class="row chips">${chips}</div>
-  <div class="panel scroll"><table><thead><tr><th>Player</th><th class="r">This week</th><th class="r">Next 4 avg</th><th class="r">Adds, 48h</th><th class="r">Value</th><th>For you</th></tr></thead><tbody>
-  ${fa.map(id=>{const p=S.P[id],up=worst[p.pos]!=null&&ros(id)>worst[p.pos];return `<tr><td>${pcell(id)}</td><td class="r num">${f1(wk(id))}</td><td class="r num">${f1(ros(id))}</td><td class="r num">${trend[id]?f0(trend[id]):''}</td><td class="r num">${f0(S.val[id])}</td><td>${up?`<span class="tag good">Beats your ${p.pos} starter</span>`:''}</td></tr>`}).join('')}
+  <div class="panel scroll"><table><thead><tr><th>Player</th><th class="r">Week ${S.planWeek}</th><th class="r">Next 4 avg</th><th class="r">Adds, 48h</th><th class="r">Value</th><th>For you</th></tr></thead><tbody>
+  ${fa.map(id=>{const p=S.P[id],up=worst[p.pos]!=null&&ros(id)>worst[p.pos];return `<tr><td>${pcell(id)}</td><td class="r num">${f1(wkPlan(id))}</td><td class="r num">${f1(ros(id))}</td><td class="r num">${trend[id]?f0(trend[id]):''}</td><td class="r num">${f0(S.val[id])}</td><td>${up?`<span class="tag good">Beats your ${p.pos} starter</span>`:''}</td></tr>`}).join('')}
   </tbody></table></div>
   <h3>Your drop candidates</h3><div class="panel scroll"><table><tbody>${drops.map(id=>`<tr><td>${pcell(id)}</td><td class="r num">${f1(ros(id))} per week</td><td class="r num">${f0(S.val[id])} value</td></tr>`).join('')}</tbody></table></div>`;
 }
